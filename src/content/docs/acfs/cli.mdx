@@ -1,0 +1,56 @@
+---
+title: acfs CLI
+description: The acfs helper binary and its JSON wire protocol.
+---
+
+The `acfs` command exposes the library over a small JSON protocol, so a process can browse and
+edit a directory, for example inside a helper container, without starting a new process for
+every file. GoReleaser publishes a static Linux binary for each supported architecture.
+
+```text
+acfs list|walk|stat|read|write|mkdir|remove|apply|version
+```
+
+## Output format
+
+| Command | Output |
+| --- | --- |
+| `list` | One JSON `ListResponse` with `entries` |
+| `stat` | One JSON `StatResponse` with `entry` |
+| `walk` | NDJSON `WalkRecord` lines, always ending with an `end` record. Supports depth and entry limits |
+| `read` | A 16-byte `ARCW` protocol-v2 header followed by the raw file content |
+| `apply` | One JSON `ApplyResponse` with the number of changes applied |
+| `version` | One JSON `VersionResponse` including the supported `protocol` |
+
+Every response includes a `version` field matching `types.ProtocolVersion` (currently `2`).
+
+## Errors
+
+On failure, the command writes exactly one JSON `ErrorResponse` line to **stderr** and nothing
+else:
+
+```json
+{"code":"outside_root","message":"path escapes workspace root","operation":"stat","path":"/../etc","version":2}
+```
+
+`code` is a stable `types.ErrorCode`:
+
+`invalid_path`, `outside_root`, `symlink`, `symlink_loop`, `not_found`, `already_exists`,
+`not_directory`, `not_file`, `not_empty`, `is_directory`, `size_mismatch`, `root_removal`,
+`internal`.
+
+For `apply`, `changeIndex` identifies the manifest entry that failed.
+
+## Read stream header
+
+To consume `read` output from Go, validate the header first, then read exactly the payload length:
+
+```go
+n, err := acfs.ReadStreamHeader(stdout)
+if err != nil {
+	return err
+}
+_, err = io.CopyN(dst, stdout, int64(n))
+```
+
+`acfs.WriteStreamHeader` produces the same header when you implement your own server side.

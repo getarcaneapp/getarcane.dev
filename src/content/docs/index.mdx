@@ -1,0 +1,66 @@
+---
+title: go.getarcane.app
+description: Reusable Go modules for Docker tooling, root-confined filesystems, streaming, and system probes, published under go.getarcane.app.
+template: splash
+hero:
+  layout: centered
+  tagline: Reusable Go modules for Docker tooling, root-confined filesystems, streaming, and system probes.
+  announcement:
+    text: All modules are pre-1.0 and may change between releases
+    link: /guides/introduction/#stability
+  actions:
+    - text: Get started
+      link: /guides/introduction/
+      icon: right-arrow
+    - text: Browse on GitHub
+      link: https://github.com/getarcaneapp/kit
+      icon: external
+      variant: secondary
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { ContainerSection } from 'lucode-starlight/components';
+
+<ContainerSection>
+
+## Modules
+
+<CardGrid>
+	<LinkCard title="kit" href="/kit/" description="Shared helpers for normalization, paths, registries, mapping, and shutdown signals." />
+	<LinkCard title="acfs" href="/acfs/" description="Root-confined filesystem operations with atomic writes and a JSON CLI." />
+	<LinkCard title="docker" href="/docker/" description="Docker Engine helpers for Compose labels, mounts, networks, exec, and logs." />
+	<LinkCard title="docker/compat" href="/docker/compat/" description="Container create and inspect that work on older Docker daemons and Podman." />
+	<LinkCard title="docker/convert" href="/docker/convert/" description="Turn docker run commands into Compose YAML." />
+	<LinkCard title="builds" href="/builds/" description="BuildKit image builds through the local Docker daemon or Depot." />
+	<LinkCard title="updater" href="/updater/" description="Docker auto-update orchestration with Compose and self-update support." />
+	<LinkCard title="streams" href="/streams/" description="JSON-lines fan-in, event buses, log broadcasting, and stats history." />
+	<LinkCard title="sys/bytes" href="/sys/bytes/" description="Byte capacities that parse and print like common Linux tools." />
+	<LinkCard title="sys/cgroup" href="/sys/cgroup/" description="cgroup v1/v2 limit detection and container identity." />
+	<LinkCard title="sys/crypto" href="/sys/crypto/" description="AES-256-GCM string encryption with key rotation." />
+</CardGrid>
+
+</ContainerSection>
+
+<ContainerSection>
+
+## Design principles
+
+<CardGrid>
+	<Card title="Small, focused modules" icon="puzzle">
+		Each module has its own `go.mod` and its own release tags, so you only pull in the
+		dependencies you use.
+	</Card>
+	<Card title="Adapter-driven" icon="setting">
+		Services such as the updater and the build engine ship working Docker-backed defaults.
+		The host application replaces only the parts it owns.
+	</Card>
+	<Card title="Safe by default" icon="approve-check">
+		Filesystem writes are atomic and confined to a root, and inputs are validated
+		before anything touches Docker.
+	</Card>
+	<Card title="Standard library first" icon="rocket">
+		Small modules such as `sys/bytes` and `acfs/atomic` depend only on the standard library.
+	</Card>
+</CardGrid>
+
+</ContainerSection>

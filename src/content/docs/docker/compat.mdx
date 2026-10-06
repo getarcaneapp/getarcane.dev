@@ -1,0 +1,77 @@
+---
+title: docker/compat
+description: Make container create and inspect work against older Docker daemons and Podman.
+---
+
+import ModuleInfo from '../../../components/ModuleInfo.astro';
+
+`docker/compat` makes newer Docker features depend on the API version the daemon actually supports,
+so in-process API callers work against older engines and Podman. The Docker CLI applies these
+workarounds for you. Code that calls the API directly has to apply them itself.
+
+<ModuleInfo path="docker/compat" />
+
+## The easy way: wrap the client
+
+```go
+import "go.getarcane.app/docker/compat"
+
+api := compat.WrapDockerAPIClientForInspectCompatibility(cli)
+// api.ContainerCreate, ContainerInspect, NetworkInspect, and NetworkList now
+// apply the compatibility shims transparently.
+```
+
+## Container create
+
+`ContainerCreateWithCompatibility` detects the daemon's API version and adjusts the request:
+
+- **Before API 1.44**, daemons don't reliably accept multiple `EndpointsConfig` entries. The
+  container is created on its primary network, and the other networks are attached with
+  `NetworkConnect` before it returns. If an attachment fails, the half-connected container is
+  removed, even if `ctx` was canceled.
+- **Before API 1.44**, per-network MAC addresses are dropped from the endpoint settings.
+
+```go
+res, err := compat.ContainerCreateWithCompatibility(ctx, cli, client.ContainerCreateOptions{
+	Config:           cfg,
+	HostConfig:       hostCfg,
+	NetworkingConfig: netCfg,
+	Name:             "web",
+})
+```
+
+For more control, call the steps yourself:
+
+```go
+version := compat.DetectDockerAPIVersion(ctx, cli)
+opts, withheld := compat.PrepareContainerCreateOptionsForDockerAPI(opts, version)
+// ... create the container ...
+err = compat.ConnectContainerExtraNetworksForDockerAPI(ctx, cli, id, withheld)
+```
+
+## Inspect and list
+
+Newer Moby address types reject CIDR suffixes that some daemons include. `ContainerInspectWithCompatibility`,
+`NetworkInspectWithCompatibility`, and `NetworkListWithCompatibility` retry a failed typed decode
+against the raw JSON with those suffixes removed.
+
+## Recreating on Podman
+
+Podman with cgroup v2 rejects some `HostConfig` fields that Docker accepts, such as
+`MemorySwappiness`. Before you recreate a container:
+
+```go
+hostCfg, changed, engine, err := compat.PrepareRecreateHostConfigForEngine(ctx, cli, inspect.HostConfig)
+if changed {
+	log.Info("sanitized host config", "engine", engine.Name, "cgroup", engine.CgroupVersion)
+}
+```
+
+## Version helpers
+
+| Symbol | Description |
+| --- | --- |
+| `DetectDockerAPIVersion` | The client's negotiated version, or the daemon's reported version |
+| `IsDockerAPIVersionAtLeast(current, min)` | Numeric comparison of dotted versions such as `1.43` and `1.44.1` |
+| `NetworkScopedMacAddressMinAPIVersion` | `"1.44"` |
+| `MultiEndpointContainerCreateMinAPIVersion` | `"1.44"` |

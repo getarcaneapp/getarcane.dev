@@ -1,0 +1,170 @@
+---
+title: updater
+description: Portable Docker auto-update orchestration for Go applications.
+---
+
+import ModuleInfo from '../../../components/ModuleInfo.astro';
+import { Steps } from '@astrojs/starlight/components';
+
+`updater` is a Docker auto-update module. It pulls newer images,
+recreates the containers running them, and restarts whatever depended on those containers. It
+handles Compose projects, registry digest checks, and containers that must update themselves.
+
+It works against the local Docker environment out of the box. Persistence, notifications, and
+self-upgrade behavior are adapters, so a host application provides only the parts it owns.
+
+<ModuleInfo path="updater" />
+
+## Quick start
+
+Everything runs through a `Service`. The zero `Config` is valid:
+
+```go
+import "go.getarcane.app/updater"
+
+service, err := updater.New(updater.Config{})
+if err != nil {
+	return err
+}
+defer service.Close()
+
+result, err := service.UpdateContainer(ctx, containerID, updater.Options{})
+```
+
+To apply recorded pending updates instead of updating one named container:
+
+```go
+store := updater.NewMemoryPendingStore(updater.ImageUpdateRecord{
+	ID:         "sha256:old-image-id",
+	Repository: "nginx",
+	Tag:        "1.27",
+	HasUpdate:  true,
+	UpdateType: updater.UpdateTypeDigest,
+})
+
+service, err := updater.New(updater.Config{PendingStore: store})
+if err != nil {
+	return err
+}
+defer service.Close()
+
+result, err := service.ApplyPending(ctx, updater.Options{})
+```
+
+`ApplyPending` applies each pending update, then restarts the containers still running the images
+it replaced. `Options{DryRun: true}` reports what would change without touching anything.
+
+## Configuring
+
+Every `Config` field is a seam. If you leave one nil, the updater supplies a Docker-backed default.
+For the purely optional fields, it skips that behavior. Override only what you own:
+
+```go
+service, err := updater.New(updater.Config{
+	// Replace a default.
+	DockerClientProvider: updater.NewDockerClientProvider(client.WithHost("tcp://docker-proxy:2375")),
+	PendingStore:         myStore,
+
+	// Add optional behavior.
+	Notifier:      myNotifier, // told about each successful update
+	EventRecorder: myEvents,   // receives lifecycle events
+	SelfUpdater:   myUpgrader, // handles the container we run in
+
+	// Restrict which containers are in scope.
+	LabelPolicy: updater.LabelPolicy{
+		IsUpdateDisabledFunc: func(l map[string]string) bool { return l["updates"] == "off" },
+	},
+
+	OperationTimeout: 30 * time.Second,
+})
+```
+
+| Field | Default when nil |
+| --- | --- |
+| `DockerClientProvider` | `NewDockerClientProvider()`, which reads the standard Docker environment variables |
+| `ImagePuller` | `NewImagePuller(provider)`, which uses Docker's `ImagePull` API |
+| `PendingStore` | `NewMemoryPendingStore()`, which starts empty |
+| `RegistryDigestResolver` | `NewRegistryDigestResolver()`, which uses local Docker credentials |
+| `RegistryTagLister` | `NewRegistryTagLister()`, which uses local Docker credentials |
+| `ProjectUpdater` | `NewDockerComposeProjectUpdater(provider)`, which shells out to `docker compose` |
+| `LabelPolicy` | `DefaultLabelPolicy()`, merged field by field |
+| `RunRecorder`, `Settings`, `Notifier`, `EventRecorder`, `UsedImageCollector` | Behavior disabled |
+| `SelfUpdater` | Self-update targets fail with `ErrSelfUpdaterRequired` |
+| `Logger` | `slog.Default()` |
+
+`LabelPolicy` merges field by field. Overriding `IsUpdateDisabledFunc` above keeps the default
+self-update, agent, server, Swarm, and stop-signal detection.
+
+`Service.Close` shuts down the Docker client that `New` created. If you supplied your own
+`DockerClientProvider`, its lifecycle stays yours and `Close` does nothing.
+
+## How it works
+
+<Steps>
+
+1. Resolve a pullable image reference for each in-scope container. Image IDs and digest-pinned
+   references are skipped, because pulling them again can never produce a newer image.
+2. Skip containers the `LabelPolicy` disables, containers the host excludes through
+   `SettingsProvider`, and Swarm tasks.
+3. Select a newer eligible version tag, or compare the configured tag's digest. See
+   [tag policies](/updater/tag-policies/).
+4. Pull the target image.
+5. Recreate the container. Compose services go through the `ProjectUpdater`, grouped by project and
+   then checked to confirm they no longer run the old image. Standalone containers are stopped,
+   created, and started directly, with rollback on failure.
+6. Restart containers that depend on what just changed, in dependency order.
+7. Hand self-update targets to the `SelfUpdater` last, since updating them may stop the calling
+   process.
+
+</Steps>
+
+Scheduling, durable persistence, and user-facing notifications are not the module's job. Supply
+adapters for those.
+
+## Checking without updating
+
+```go
+check, err := service.CheckContainerUpdate(ctx, containerID)
+if err != nil {
+	return err
+}
+if check.UpdateAvailable {
+	fmt.Printf("%s -> %s (%s)\n", check.CurrentRef, check.TargetRef, check.UpdateType)
+}
+```
+
+`CheckContainerUpdate` and `CheckImageUpdate` never pull, recreate, or write pending records.
+`Status()` returns a snapshot of the containers and projects currently being updated.
+
+## Container labels
+
+The default `LabelPolicy` reads these labels. They are also exported from `updater/labels`.
+
+| Label | Effect |
+| --- | --- |
+| `com.getarcaneapp.arcane.updater` | `false` (or `0`, `no`, `off`) opts the container out of updates |
+| `com.getarcaneapp.arcane.updater.strategy` | `digest`, `tag`, or `auto` |
+| `com.getarcaneapp.arcane.updater.constraint` | Semver range for tag updates |
+| `com.getarcaneapp.arcane.updater.tag-pattern` | Regex that selects tags and captures their version |
+| `com.getarcaneapp.arcane.depends-on` | Comma-separated container names to restart in dependency order |
+| `com.getarcaneapp.arcane.stop-signal` | Custom stop signal |
+| `com.getarcaneapp.arcane` / `.agent` | Marks a self-update target, which is handed to the `SelfUpdater` |
+
+## Packages
+
+| Package | Contents |
+| --- | --- |
+| `updater` | `Service`, `Config`, the adapter interfaces, and the result types |
+| `updater/refs` | Image reference normalization and pullability checks |
+| `updater/digest` | OCI digest parsing and canonicalization |
+| `updater/labels` | The container label keys and the functions that read them |
+| `updater/registry` | Registry tag listing, digest lookups, and pull rate limits |
+| `updater/types` | `Policy`, `CheckRequest`, `CheckResult`, and Compose adapter contracts |
+| `updater/pkg/utils/tagpolicy` | Semantic-version tag selection |
+
+## Errors
+
+Match these with `errors.Is`: `ErrContainerNotFound`, `ErrSelfUpdaterRequired`,
+`ErrSelfUpdateContainer`, `ErrPendingStoreRequired`, `ErrImagePullerRequired`,
+`ErrDockerClientProviderRequired`, `ErrNilDockerClient`. `New` returns a `*ConfigError` naming the
+`Config` field it could not accept.

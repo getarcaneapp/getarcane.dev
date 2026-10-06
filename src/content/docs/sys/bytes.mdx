@@ -1,0 +1,54 @@
+---
+title: sys/bytes
+description: Byte capacities that parse and print like common Linux tools.
+---
+
+import ModuleInfo from '../../../components/ModuleInfo.astro';
+
+`sys/bytes` has one central type, `Capacity`: a `uint64` byte count that prints itself the way
+`df -h` does (`10.4G`) and parses that format back. It depends only on the standard library.
+
+<ModuleInfo path="sys/bytes" />
+
+## Parsing and printing
+
+```go
+import "go.getarcane.app/sys/bytes"
+
+c, err := bytes.ParseCapacity("512Mi")
+if err != nil {
+	return err // wraps bytes.ErrInvalidCapacity
+}
+
+fmt.Println(c.Bytes())       // 536870912
+fmt.Println(c)               // "536.9M"
+fmt.Println(c.Mebibytes())   // 512
+fmt.Println(5 * bytes.Gigabyte) // "5G"
+```
+
+- **Input** accepts whole integers with one optional suffix: SI (`K`, `M`, `G`, `T`, `P`, `E`)
+  or IEC (`Ki`, `Mi`, `Gi`, `Ti`, `Pi`, `Ei`). A value without a suffix is a plain byte count.
+- **Output** always uses base-10 units, rounded to the nearest tenth of the largest unit.
+
+## Command-line flags
+
+`*Capacity` implements `flag.Value`, so you can bind it directly:
+
+```go
+limit := 2 * bytes.Gigabyte
+flag.Var(&limit, "max-size", "maximum upload size (e.g. 500M, 2Gi)")
+flag.Parse()
+```
+
+## Constants
+
+| SI (base 10) | IEC (base 2) |
+| --- | --- |
+| `Kilobyte` = 1000 | `Kibibyte` = 1024 |
+| `Megabyte` | `Mebibyte` |
+| `Gigabyte` | `Gibibyte` |
+| `Terabyte` | `Tebibyte` |
+| `Petabyte` | `Pebibyte` |
+| `Exabyte` | `Exbibyte` |
+
+Each unit has a matching integer accessor on `Capacity`, such as `Gigabytes()` and `Gibibytes()`.

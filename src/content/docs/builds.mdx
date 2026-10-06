@@ -1,0 +1,93 @@
+---
+title: builds
+description: BuildKit image builds through the local Docker daemon or Depot.
+---
+
+import ModuleInfo from '../../components/ModuleInfo.astro';
+
+`builds` is an image build engine. It runs BuildKit builds either on the local Docker daemon
+or on [Depot](https://depot.dev), streams the same output the Docker CLI would print, and can load
+or push the result.
+
+<ModuleInfo path="builds" />
+
+## Create a service
+
+The host application supplies three small providers:
+
+```go
+import (
+	"go.getarcane.app/builds/api"
+	"go.getarcane.app/builds/types"
+)
+
+svc := api.NewService(api.Config{
+	SettingsProvider:     settings,     // BuildSettings()
+	DockerClientProvider: dockerClients, // GetClient(ctx)
+	RegistryAuthProvider: registries,    // GetAllRegistryAuthConfigs(ctx)
+	Logger:               slog.Default(),
+})
+```
+
+| Interface | Method | Purpose |
+| --- | --- | --- |
+| `types.SettingsProvider` | `BuildSettings() BuildSettings` | Default provider, Depot credentials, and timeout |
+| `types.DockerClientProvider` | `GetClient(ctx) (*client.Client, error)` | Docker client for local builds and loads |
+| `types.RegistryAuthProvider` | `GetAllRegistryAuthConfigs(ctx)` | Registry credentials for pulls and pushes |
+
+`BuildSettings` fields:
+
+| Field | Description |
+| --- | --- |
+| `BuildProvider` | `local` (the default) or `depot` |
+| `BuildTimeoutSecs` | Timeout for the whole build. Zero means 30 minutes |
+| `DepotProjectID`, `DepotToken` | Required for the `depot` provider |
+
+## Build an image
+
+```go
+result, err := svc.BuildImage(ctx, types.BuildRequest{
+	ContextDir: "/srv/projects/web",
+	Dockerfile: "Dockerfile",
+	Tags:       []string{"registry.example.com/web:latest"},
+	BuildArgs:  map[string]string{"VERSION": "1.4.0"},
+	Push:       true,
+}, os.Stdout, "")
+if err != nil {
+	return err
+}
+fmt.Println(result.Provider, result.Digest)
+```
+
+The progress writer receives the plain text the Docker CLI prints, including BuildKit progress
+and push/load output. Writes to it are serialized, so any `io.Writer` is safe to pass.
+
+### Defaults and rules
+
+- If neither `Push` nor `Load` is set, `local` builds **load** into the daemon and `depot` builds
+  **push**.
+- `Tags` is required when pushing or loading. Tags are trimmed and de-duplicated.
+- `Dockerfile` and `DockerfileInline` are mutually exclusive.
+- `Provider` on the request overrides the default from settings.
+
+### Provider limitations
+
+| Provider | Rejects |
+| --- | --- |
+| `local` | `cacheTo`, `entitlements`, `privileged`, and more than one platform |
+| `depot` | `network`, `isolation`, `shmSize`, `ulimits`, `extraHosts`, and builds that don't push |
+
+## Errors
+
+Validation failures use concrete error types, so you can match them with `errors.As`. Examples
+include `*types.BuildTagsRequiredError`, `*types.DepotBuildPushRequiredError`,
+`*types.DockerfileAndInlineMutuallyExclusiveError`, and `*types.BuildProviderUnavailableError`.
+Exporter failures (`BuildKitImageExporterError`, `BuildKitDockerExporterError`) wrap the
+underlying cause.
+
+## Helper packages
+
+| Package | Contents |
+| --- | --- |
+| `builds/pkg/docker` | `ClientOpts` and `SessionDialer` for connecting a BuildKit client through the Docker API. Also `RenderJSONMessageStream` |
+| `builds/pkg/contextsource` | Parses Git build context strings in the form `repo#ref:subdir`. Rejects a subdirectory that is absolute or escapes the repository |

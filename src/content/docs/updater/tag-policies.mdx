@@ -1,0 +1,110 @@
+---
+title: Tag policies
+description: Follow digests or move to newer semantic-version tags with the updater.
+---
+
+By default the updater keeps a container's configured tag and only follows that tag's
+**digest**. Tag policies let it move to a **newer tag** instead, for example from `3.1.2` to `3.2.0`.
+
+## Strategies
+
+| Strategy | Behavior |
+| --- | --- |
+| *(omitted)* | Follow the digest, unless a constraint or tag pattern is set |
+| `digest` | Always follow the current tag's digest |
+| `tag` | Select a newer tag. Requires a valid tag policy |
+| `auto` | Select a newer tag for stable, complete semantic versions such as `3.1.2` or `v3.1.2`. Moving tags (`latest`), partial versions (`3`, `3.1`), and ambiguous prerelease or variant tags fall back to digest checks |
+
+A constraint or tag pattern without a strategy behaves like `auto`.
+
+## Configure with labels
+
+```yaml
+services:
+  app:
+    image: example/app:3.1.2-alpine
+    labels:
+      com.getarcaneapp.arcane.updater.strategy: tag
+      com.getarcaneapp.arcane.updater.constraint: '3.x'
+      com.getarcaneapp.arcane.updater.tag-pattern: '(?P<version>\d+\.\d+\.\d+)-alpine'
+```
+
+### Constraints
+
+- Without a constraint, tag updates stay within the current **major** version, or within the
+  current **minor** version for `0.x`.
+- An explicit constraint replaces that range.
+- Prereleases require a constraint that admits them, such as `>=3.1.2-0 <4.0.0`.
+
+### Tag patterns
+
+- A pattern must match the **entire** tag.
+- A named `version` capture group extracts the semantic version from a variant tag such as
+  `3.1.2-alpine`, so the variant is kept.
+- Without a capture group, the whole matched tag must be a semantic version.
+
+### Selection rules
+
+- The exact registry tag is kept when pulling.
+- Candidate versions that are equal resolve to the lexically smallest tag.
+- The current version is never replaced with an equal or older one.
+- If no newer tag qualifies, the current tag is still checked for digest changes.
+- Image IDs and digest-pinned references are ineligible, even with `Force`.
+- Invalid rules or an incompatible current tag return an error.
+
+## Configure in code
+
+Tag policies come from the `LabelPolicy.TagPolicyFunc`. To use your own source:
+
+```go
+import updatertypes "go.getarcane.app/updater/types"
+
+service, err := updater.New(updater.Config{
+	LabelPolicy: updater.LabelPolicy{
+		TagPolicyFunc: func(labels map[string]string) updatertypes.Policy {
+			return updatertypes.Policy{Strategy: "auto", Constraint: ">=1.0.0 <2.0.0"}
+		},
+	},
+})
+```
+
+To check an image you already have a reference and policy for:
+
+```go
+check, err := service.CheckImageUpdate(ctx, updatertypes.CheckRequest{
+	ImageRef:      "example/app:3.1.2",
+	CurrentDigest: "sha256:...", // optional; avoids a local Docker lookup
+	Policy:        updatertypes.Policy{Strategy: "tag", Constraint: "3.x"},
+})
+```
+
+The selection logic is also available on its own in `updater/pkg/utils/tagpolicy`, as `Resolve`,
+`Select`, and `Version`.
+
+## Pending updates and Compose
+
+- `ImageUpdateRecord.ContainerID` scopes a record to one container. Durable stores must include it
+  in the record's identity, so that two containers sharing an image can follow different rules.
+  The built-in memory store already does this.
+- `ApplyPending` rechecks references, eligibility, and constraints before pulling. It pulls each
+  distinct target once, and keeps records after a failure. It updates running containers only. Use
+  `UpdateContainer` to update a stopped container.
+
+For **Compose tag changes**, implement `types.ProjectImageUpdater` on your `ProjectUpdater`:
+
+```go
+UpdateServiceImages(ctx context.Context, projectID string,
+	changes map[string]types.ServiceImageChange) error
+```
+
+The adapter must check that the stored service image still matches `ExpectedRef`, store
+`TargetRef`, and recreate the service. Return success only once both are done. The built-in
+`docker compose` adapter supports digest updates only. Compose tag changes fail before pulling
+unless a host adapter implements this interface.
+
+## Registry access
+
+The default `RegistryTagLister` uses Docker configuration credentials and handles pagination,
+requesting 1000 tags per page. The caller's deadline applies to the whole listing; without one, it
+falls back to 120 seconds. A partial listing is never treated as "up to date". Replace
+`Config.RegistryTagLister` to supply your own credentials or registry client.

@@ -1,0 +1,26 @@
+{
+	"name": "getarcane-dev",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"preinstall": "npx only-allow pnpm",
+		"dev": "astro dev --port 3002",
+		"build": "astro build",
+		"preview": "astro preview",
+		"check": "astro check",
+		"deploy": "astro build && wrangler deploy"
+	},
+	"dependencies": {
+		"@astrojs/starlight": "^0.42.5",
+		"astro": "^7.3.5",
+		"lucode-starlight": "^1.0.0",
+		"sharp": "^0.35.5"
+	},
+	"devDependencies": {
+		"@astrojs/check": "^0.9.10",
+		"typescript": "^6.0.3",
+		"wrangler": "^4.147.0"
+	},
+	"packageManager": "pnpm@12.9.1"
+}

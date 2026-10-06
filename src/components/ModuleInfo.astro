@@ -1,0 +1,66 @@
+---
+import { Aside, Code } from '@astrojs/starlight/components';
+import { getModule, importPath, pkgGoDevUrl, sourceUrl } from '../data/modules';
+
+interface Props {
+	/** Module path below go.getarcane.app, e.g. "docker/compat". */
+	path: string;
+}
+
+const mod = getModule(Astro.props.path);
+const path = importPath(mod);
+const source = sourceUrl(mod);
+---
+
+{
+	mod.deprecated && (
+		<Aside type="caution" title="Deprecated">
+			This module is kept only for existing importers. New code should use{' '}
+			<code>{mod.deprecated}</code>.
+		</Aside>
+	)
+}
+
+<dl class="module-info not-content">
+	<div>
+		<dt>Module</dt>
+		<dd><code>{path}</code></dd>
+	</div>
+	<div>
+		<dt>Source</dt>
+		<dd><a href={source}>{source.replace('https://', '')}</a></dd>
+	</div>
+	<div>
+		<dt>Reference</dt>
+		<dd><a href={pkgGoDevUrl(mod)}>pkg.go.dev</a></dd>
+	</div>
+</dl>
+
+<Code code={`go get ${path}@latest`} lang="sh" />
+
+<style>
+	.module-info {
+		display: grid;
+		gap: 0.5rem;
+		margin-block: 1.5rem 1rem;
+		padding: 1rem 1.25rem;
+		border: 1px solid var(--sl-color-hairline);
+		border-radius: var(--radius);
+		font-size: var(--sl-text-sm);
+	}
+
+	.module-info > div {
+		display: grid;
+		grid-template-columns: 6rem 1fr;
+		gap: 1rem;
+	}
+
+	.module-info dt {
+		color: var(--sl-color-gray-3);
+	}
+
+	.module-info dd {
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+</style>

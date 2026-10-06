@@ -1,0 +1,159 @@
+---
+title: acfs
+description: Root-confined filesystem operations for Go applications.
+---
+
+import ModuleInfo from '../../../components/ModuleInfo.astro';
+
+ACFS provides directory listing, recursive walks, metadata, and
+streaming reads and writes that **can never escape a root directory**. Logical paths are confined
+with `os.Root`, `..` components are collapsed, and a symlink whose target escapes the root reports
+`ErrOutsideRoot` instead of being followed.
+
+<ModuleInfo path="acfs" />
+
+## Concepts
+
+Every operation takes two paths:
+
+- **`rootPath`** is the real host directory that acts as the boundary, for example
+  `/var/lib/docker/volumes/app/_data`.
+- **`logicalPath`** is an absolute path *inside* that root, for example `/config/app.yaml`.
+  `/` refers to the root itself.
+
+`acfs.LogicalPath(rootPath, absPath)` translates a host path into a logical path. It is purely
+lexical and does not touch the filesystem.
+
+## Reading
+
+```go
+import (
+	"go.getarcane.app/acfs"
+	"go.getarcane.app/acfs/types"
+)
+
+root := "/var/lib/docker/volumes/example/_data"
+
+entries, err := acfs.List(ctx, root, "/")
+if err != nil {
+	return err
+}
+
+err = acfs.Walk(ctx, root, "/logs", func(entry types.Entry) error {
+	fmt.Println(entry.Path, entry.Mode, entry.Size)
+	return nil
+})
+
+data, err := acfs.ReadFile(ctx, root, "/config.yaml")
+```
+
+| Function | Description |
+| --- | --- |
+| `List` / `ListEach` | Direct children of a directory. `ListEach` streams them in name order without keeping them all in memory |
+| `Walk` | Every descendant, depth first, in deterministic order. Symlinks are not followed |
+| `WalkBounded` | Like `Walk`, with `types.WalkOptions{MaxDepth, MaxEntries}`. Reports whether anything was left out |
+| `Stat` | Metadata for one path. With `followFinal` set, the final link is resolved and `Entry.Path` is the resolved logical path |
+| `Exists` | Reports existence without following the final link, so a dangling link counts as existing |
+| `ReadFile` | Whole contents of a regular file |
+| `OpenRead` / `ReadTo` | Streaming reads with an optional byte limit |
+| `OpenReadSeek` | A seekable reader over the whole file, for example for HTTP range requests |
+
+## Writing
+
+Writes are **atomic by default**. The content is staged in a temporary file in the target's
+directory and renamed into place, so a reader never sees a partly written file.
+
+```go
+err = acfs.Write(ctx, root, "/config.yaml", data, acfs.WriteOptions{Mode: 0o644})
+```
+
+Set `InPlace` to keep the existing file's inode. You need this when the file is bind-mounted into a
+running container, because a rename would leave the container holding the old inode:
+
+```go
+err = acfs.Write(ctx, root, "/config.yaml", data, acfs.WriteOptions{Mode: 0o644, InPlace: true})
+```
+
+:::caution
+In-place writes are not atomic. A failure part-way through can leave a partly written file, so
+the caller must coordinate writers and handle recovery. In-place writes also refuse a symlink as
+the final path component.
+:::
+
+| Function | Description |
+| --- | --- |
+| `Write` | Writes a byte slice, atomically or in place |
+| `WriteFrom` | Atomically writes exactly `expectedSize` bytes from an `io.Reader`. The destination is unchanged if the transfer fails |
+| `WriteAt` | Writes at an offset in an existing file, in place |
+| `Mkdir` / `MkdirAll` / `MkdirTemp` | Directory creation. `MkdirTemp` returns a logical path and leaves cleanup to the caller |
+| `Rename` | `os.Rename` semantics within one root. A cross-device rename returns `EXDEV` unchanged |
+| `Remove` | Removes a file, link, or empty directory. **Returns** a not-exist error |
+| `RemoveAll` | Removes a whole tree. A missing target is not an error |
+
+Temporary files use the reserved `.acfs-write-` prefix. Paths containing that prefix are rejected,
+and `List`, `Walk`, and `CopyDir` hide them.
+
+## Copying and mirroring
+
+```go
+// Copy one root into another. Symlinks, sockets, FIFOs, and devices are skipped.
+res, err := acfs.CopyDir(ctx, srcRoot, dstRoot, types.CopyOptions{TolerateUnreadable: true})
+fmt.Println(res.Copied, res.Skipped)
+
+// Make dstRoot match srcRoot, updating files IN PLACE so bind mounts keep working.
+err = acfs.MirrorDir(ctx, srcRoot, dstRoot, types.MirrorOptions{
+	Preserve: []string{".env"},
+})
+```
+
+`MirrorDir` first removes destination entries that are missing from the source or have a different
+type, then copies over the rest. Files whose content already matches are left untouched, including
+their inode and mtime. Unreadable source files and unwritable destination files are tolerated:
+stopping half-way would leave a live directory in a worse, mixed state.
+
+## Batch changes
+
+`Apply` runs an ordered `types.ApplyManifest` of create, update, rename, move, and delete
+operations. It stops at the first failure and returns a `*types.ApplyError` that gives the index of
+the failing change. It does **not** roll back. If you need a transaction, restore your own backup.
+
+```go
+applied, err := acfs.Apply(ctx, root, stagingDir, types.ApplyManifest{
+	Version: types.ProtocolVersion,
+	Changes: []types.ApplyChange{
+		{Operation: types.ApplyCreateFolder, Path: "/conf.d"},
+		{Operation: types.ApplyRename, Path: "/old.yaml", TargetPath: "/new.yaml"},
+		{Operation: types.ApplyDelete, Path: "/tmp", Recursive: true},
+	},
+})
+```
+
+## Errors
+
+ACFS sentinels classify policy failures:
+
+`ErrInvalidPath`, `ErrOutsideRoot`, `ErrSymlinkLoop`, `ErrSymlink`, `ErrIsDirectory`,
+`ErrNotDirectory`, `ErrNotFile`, `ErrNotEmpty`, `ErrAlreadyExists`, `ErrRootRemoval`,
+`ErrSizeMismatch`.
+
+Errors from the operating system are wrapped, not translated, so the standard predicates keep
+working: `errors.Is(err, fs.ErrNotExist)`, `errors.Is(err, fs.ErrExist)`, and
+`errors.Is(err, os.ErrPermission)`.
+
+## acfs/atomic
+
+For the few destinations with no natural root, such as a user-chosen output file, use
+`acfs/atomic`. It is a crash-safe, drop-in replacement for `os.WriteFile`: it writes to a temporary
+file, fsyncs, chmods, and renames. Unlike `acfs.Write`, it **refuses** a symlinked destination
+instead of replacing it.
+
+```go
+import "go.getarcane.app/acfs/atomic"
+
+err := atomic.WriteFile("/etc/myapp/key", key, 0o600)
+```
+
+## acfs/types
+
+Holds the public data contracts: `Entry`, the option and result types, and the versioned JSON
+response types used by the [command-line protocol](/acfs/cli/).

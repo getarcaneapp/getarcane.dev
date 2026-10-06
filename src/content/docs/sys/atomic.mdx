@@ -1,0 +1,27 @@
+---
+title: sys/atomic
+description: Legacy atomic file writes, superseded by acfs/atomic.
+---
+
+import ModuleInfo from '../../../components/ModuleInfo.astro';
+
+`sys/atomic` is the original home of the crash-safe `WriteFile`. It lives in the separate
+[`getarcaneapp/sys`](https://github.com/getarcaneapp/sys) repository and is scheduled for removal.
+
+<ModuleInfo path="sys/atomic" />
+
+## Migrating
+
+[`acfs/atomic`](/acfs/#acfsatomic) has the same function signature, so moving over only means
+changing the import:
+
+```diff lang="go"
+-import "go.getarcane.app/sys/atomic"
++import "go.getarcane.app/acfs/atomic"
+
+ err := atomic.WriteFile(path, data, 0o600)
+```
+
+Both packages write to a temporary file in the destination's directory, fsync it, apply the
+permissions, and rename it into place. Both refuse to write through a symlink, directory, named
+pipe, socket, or device.

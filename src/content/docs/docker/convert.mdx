@@ -1,0 +1,70 @@
+---
+title: docker/convert
+description: Convert docker run commands into Docker Compose YAML.
+---
+
+import ModuleInfo from '../../../components/ModuleInfo.astro';
+
+`docker/convert` turns one or more `docker run` commands into a Docker Compose document.
+Commands are parsed as text and never executed, so
+shell substitutions such as `$(...)` are copied through literally.
+
+<ModuleInfo path="docker/convert" />
+
+## Convert in one call
+
+```go
+import (
+	"go.getarcane.app/docker/convert"
+	converttypes "go.getarcane.app/docker/convert/types"
+)
+
+result, err := convert.Convert(
+	`docker run -d --name web -p 8080:80 -v data:/usr/share/nginx/html nginx:1.27`,
+	converttypes.Options{},
+)
+if err != nil {
+	return err
+}
+
+fmt.Println(string(result.YAML))
+```
+
+`Result` contains:
+
+| Field | Description |
+| --- | --- |
+| `YAML` | The rendered Compose file |
+| `Project` | The same document as a parsed `compose-go` `*types.Project` |
+| `Services` | Name and image of each generated service |
+| `EnvFile` | `.env` contents collected from every `-e KEY=VALUE` flag, or nil when there are none |
+| `Warnings` | Flags that could not be represented in Compose |
+
+Set `Options.ExistingComposeYAML` to merge the new services into an existing file, and
+`Options.RenderWarnings` to add warnings as `#` comments at the top of the YAML.
+
+## Step by step
+
+`Convert` is a pipeline of three public steps you can call yourself:
+
+```go
+cmds, err := convert.Parse(input, converttypes.ParseOptions{})          // []RunCommand
+doc, err := convert.Build(cmds, converttypes.Options{})                 // *Document
+yaml, err := convert.Marshal(doc, converttypes.MarshalOptions{})        // []byte
+```
+
+This lets you inspect or change the intermediate `RunCommand` (image, name, command, entrypoint,
+and flags) or `Document` (services, networks, volumes, and warnings).
+
+## Errors
+
+Errors wrap one of two sentinels:
+
+```go
+switch {
+case errors.Is(err, converttypes.ErrParse):
+	// The input is not a valid docker run command, e.g. no image.
+case errors.Is(err, converttypes.ErrConversion):
+	// Parsed, but could not be represented as Compose.
+}
+```

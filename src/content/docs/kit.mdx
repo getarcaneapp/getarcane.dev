@@ -1,0 +1,189 @@
+---
+title: kit
+description: Shared Go helpers used across the go.getarcane.app modules.
+---
+
+import ModuleInfo from '../../components/ModuleInfo.astro';
+
+`kit` is the root module of the repository. It holds helpers that more than one nested module
+depends on: string and path utilities, Unicode normalization, registry host canonicalization, and
+more. Nested modules import `kit`. `kit` never imports them.
+
+<ModuleInfo path="kit" />
+
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| [`kit/pkg`](#kitpkg) | General-purpose generics, string, path, and hashing helpers |
+| [`kit/normalization`](#kitnormalization) | Opt-in Unicode NFC and whitespace normalization driven by struct tags |
+| [`kit/pkg/capture`](#kitpkgcapture) | Bounded, concurrency-safe output buffer |
+| [`kit/pkg/fs`](#kitpkgfs) | Logical workspace path conversion for `os.Root` |
+| [`kit/pkg/git`](#kitpkggit) | Git repository URL detection and normalization |
+| [`kit/pkg/mapping`](#kitpkgmapping) | Deep copies between structurally similar types |
+| [`kit/pkg/registry`](#kitpkgregistry) | Container registry host canonicalization |
+| [`kit/pkg/signals`](#kitpkgsignals) | Graceful-shutdown contexts |
+| [`kit/pkg/utils`](#kitpkgutils) | Helpers for string slices with blank entries |
+
+## kit/pkg
+
+The package is named `kit`, so it is usually imported as:
+
+```go
+import kit "go.getarcane.app/kit/pkg"
+```
+
+### Generics
+
+```go
+port := kit.ParseOrDefault(os.Getenv("PORT"), 3552, strconv.Atoi)
+name := kit.FromPtr(req.Name)             // "" when nil
+mode := kit.Ternary(debug, "dev", "prod")
+tags := kit.Unique([]string{"a", "b", "a"}) // [a b]
+count := kit.As[int](raw["count"], 0)     // type-asserted with a fallback
+```
+
+| Function | Description |
+| --- | --- |
+| `As[T](value, fallback)` | Returns `value` as `T`, or `fallback` if it is nil or holds a different type |
+| `AsStringMap(value)` | Converts any map with string or interface keys to `map[string]any` |
+| `Collect[T](value, mapper)` | Maps a slice, an array, or a single value through `mapper` |
+| `FromPtr[T](ptr)` | Dereferences `ptr`, returning the zero value when it is nil |
+| `ParseOrDefault[T](value, def, parse)` | Parses `value`, falling back to `def` when it is empty or invalid |
+| `Ternary[T](cond, a, b)` | Inline conditional |
+| `Unique(items)` | Distinct items in first-seen order |
+
+### Strings and parsing
+
+| Function | Description |
+| --- | --- |
+| `ParseBool(value)` | Accepts `true/1/yes/on` and `false/0/no/off`, and reports whether the value was recognized |
+| `Capitalize`, `SnakeCase` | Case helpers |
+| `EnsurePrefix`, `TrimQuotes`, `TrimNonEmpty`, `ToString` | Trimming and conversion |
+| `RandomString(n)` | `n` URL-safe characters from `crypto/rand` |
+| `SHA256Hex(s)` | Hex SHA-256 of a `string` or `[]byte` |
+
+### Paths
+
+| Function | Description |
+| --- | --- |
+| `NormalizeRelativePath(input)` | Cleans a slash-delimited path so it can never begin with `/` or escape the root |
+| `SanitizeBrowsePath(input)` | Cleans a file-browser path to an absolute form and rejects traversal above the root |
+| `ValidateFileName(name)` | Validates a single path segment |
+| `FilePathMatches(rel, root)` | Reports whether `rel` is `root` or lies beneath it |
+| `SQLitePathFromDSN(dsn)` | Extracts the file path from a SQLite `file:` DSN |
+
+### Networking, sorting, and hashing
+
+- `CompareAddresses` and `CompareSubnets` sort IP and CIDR strings numerically.
+  Pass them to `slices.SortFunc`.
+- `Fingerprint(values...)` returns an order-sensitive FNV-1a hash for change detection.
+  It is **not** collision resistant and must never back a security decision.
+- `WriteRecord(w, fields...)` writes NUL-separated, newline-terminated records for stable content
+  hashes.
+
+## kit/normalization
+
+Normalizes struct fields in place based on their tags: trims surrounding Unicode whitespace,
+applies NFC, and checks length constraints. Untagged fields are left alone.
+
+| Tag | Effect |
+| --- | --- |
+| `trim:"true"` | Trims surrounding Unicode whitespace |
+| `unorm:"nfc"` | Applies Unicode NFC normalization |
+| `minLength:"n"` / `maxLength:"n"` | Length checks applied after normalization |
+
+```go
+import "go.getarcane.app/kit/normalization"
+
+type CreateProjectRequest struct {
+	Name     string  `json:"name" trim:"true" unorm:"nfc" minLength:"1" maxLength:"64"`
+	Comment  *string `json:"comment,omitempty" trim:"true"`
+	Password string  `json:"password"` // untagged: never modified
+}
+
+if err := normalization.Normalize(&req); err != nil {
+	return err
+}
+
+// Normalize raw JSON before schema validation, keeping unknown fields and number precision.
+body, err = normalization.NormalizeJSON(body, reflect.TypeFor[CreateProjectRequest]())
+```
+
+`HasRules(typ)` validates a type's tags and reports whether it has any. Compiled metadata is
+cached and safe for concurrent use. `Text(value, trim, nfc)` normalizes a single string. Don't use
+any of these on secrets.
+
+## kit/pkg/capture
+
+A bounded `io.Writer` for build or process logs. Writes never fail. Once the limit is reached the
+rest is dropped and the capture is marked truncated.
+
+```go
+import "go.getarcane.app/kit/pkg/capture"
+
+logs := capture.New(1 << 20) // keep at most 1 MiB
+cmd.Stdout = io.MultiWriter(os.Stdout, logs)
+_ = cmd.Run()
+
+record.Output = logs.String()
+record.Truncated = logs.Truncated()
+```
+
+## kit/pkg/fs
+
+Converts between the absolute *logical* paths shown to users (`/config/app.yaml`) and the relative
+paths `os.Root` accepts (`config/app.yaml`).
+
+- `NormalizeLogicalPath(path)` validates a logical path and returns its relative form. Malformed
+  input returns `ErrInvalidPath`.
+- `LogicalPath(rel)` goes the other way.
+- `FormatMode(mode)` renders a file mode the way POSIX `stat` does.
+
+## kit/pkg/git
+
+- `IsSupportedRepositoryURL(raw)` recognizes scp-style `git@`, `git://`, `ssh://`, `http://`, and
+  `https://` repository URLs.
+- `NormalizeForMatch(raw)` trims whitespace, trailing slashes, and a `.git` suffix so URLs can be
+  compared.
+- `RequiresRemoteProbe(raw)` reports whether only asking the remote can tell if an HTTP(S) URL
+  points at a Git repository.
+
+## kit/pkg/mapping
+
+Deep-copies between structurally similar types, converting `netip` values to and from strings
+along the way. It is useful for moving between API DTOs and internal models.
+
+```go
+import "go.getarcane.app/kit/pkg/mapping"
+
+dto, err := mapping.MapOne[models.Network, api.Network](network)
+dtos, err := mapping.MapSlice[models.Network, api.Network](networks)
+```
+
+## kit/pkg/registry
+
+Canonicalizes registry hosts so that image references and credential lookups agree on what counts
+as the same registry.
+
+```go
+import "go.getarcane.app/kit/pkg/registry"
+
+registry.Normalize("https://index.docker.io/v1/") // "docker.io"
+registry.LookupKeys("docker.io")                  // every Docker Hub alias to probe in a credential store
+```
+
+## kit/pkg/signals
+
+```go
+import "go.getarcane.app/kit/pkg/signals"
+
+ctx := signals.SignalContext(context.Background())
+// ctx is canceled on the first interrupt. A second interrupt, or a missed
+// graceful-shutdown deadline, forces the process to exit.
+```
+
+## kit/pkg/utils
+
+`CountNonEmpty`, `HasNonEmpty`, and `NormalizeSet` work on string slices whose entries may be
+blank. `NormalizeSet` trims each entry, drops blanks and duplicates, and returns a sorted copy.

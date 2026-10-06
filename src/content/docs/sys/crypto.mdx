@@ -1,0 +1,82 @@
+---
+title: sys/crypto
+description: AES-256-GCM string encryption with key rotation.
+---
+
+import ModuleInfo from '../../../components/ModuleInfo.astro';
+
+`sys/crypto` encrypts and decrypts strings with AES-256-GCM, for example to encrypt
+stored credentials. It supports key rotation: older keys can
+still decrypt while new data is encrypted with the primary key.
+
+<ModuleInfo path="sys/crypto" />
+
+## Encrypting
+
+```go
+import "go.getarcane.app/sys/crypto"
+
+key, err := crypto.ParseKey(os.Getenv("ENCRYPTION_KEY"))
+if err != nil {
+	return err
+}
+
+enc, err := crypto.New(key)
+if err != nil {
+	return err
+}
+
+ciphertext, err := enc.Encrypt("hunter2") // base64 AES-GCM
+plaintext, err := enc.Decrypt(ciphertext)
+```
+
+- `Encrypt("")` returns `""`, so empty, nullable fields stay empty.
+- Each call uses a fresh random 96-bit nonce. Don't encrypt more than 2³² messages with one key.
+
+## Key material
+
+`ParseKey` accepts:
+
+| Input | Interpreted as |
+| --- | --- |
+| `hex:…` | A hex-encoded 32-byte key |
+| `base64:…` | A base64-encoded 32-byte key |
+| anything else | A passphrase, turned into a key with HKDF-SHA256 |
+
+Requiring a prefix means a passphrase that happens to look like hex is never mistaken for a raw key.
+
+Other key helpers:
+
+```go
+key, err := crypto.GenerateKey()                  // random 32-byte key
+err = crypto.SaveKeyFile("/data/.key", key)       // hex, atomic, mode 0600
+key, err = crypto.LoadKeyFile("/data/.key")
+```
+
+## Rotating keys
+
+Pass the old keys after the primary key. Decryption tries the primary key first, then each old
+key in order:
+
+```go
+enc, err := crypto.New(newKey, oldKey1, oldKey2)
+
+plain, err := enc.Decrypt(storedValue) // works for values written with any of the keys
+fresh, err := enc.Encrypt(plain)       // always written with newKey
+```
+
+## Package-level encryptor
+
+`InitEncryption`, `Encrypt`, `Decrypt`, and `Default` use a process-wide encryptor for code that
+doesn't yet pass an `*Encryptor` around. Prefer constructing one with `New` and passing it
+explicitly.
+
+## Errors
+
+| Type | Meaning |
+| --- | --- |
+| `*InvalidKeyError` | The key material is malformed or the wrong size |
+| `*CiphertextError` | The ciphertext is structurally invalid |
+| `*DecodeError` | The ciphertext is not valid base64 |
+| `*DecryptError` | Authentication failed: wrong key or tampered data |
+| `*RandomError` | The system's random source failed |

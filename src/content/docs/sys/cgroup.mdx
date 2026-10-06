@@ -1,0 +1,76 @@
+---
+title: sys/cgroup
+description: Detect cgroup resource limits and container identity for the current process.
+---
+
+import ModuleInfo from '../../../components/ModuleInfo.astro';
+
+`sys/cgroup` inspects the environment the current process runs in: cgroup v1 and v2 CPU and memory
+limits, whether it is inside Docker or LXC, its own container ID, and how much ZFS ARC memory can be
+reclaimed.
+
+Every probe degrades gracefully. On non-Linux hosts the cgroup and procfs files simply fail to
+open, and the functions report "not in a cgroup" or zero values.
+
+<ModuleInfo path="sys/cgroup" />
+
+## Resource limits
+
+```go
+import "go.getarcane.app/sys/cgroup"
+
+limits, err := cgroup.DetectLimits()
+if err != nil {
+	// Not running under a cgroup with explicit limits.
+}
+fmt.Println(limits.MemoryLimit, limits.CPUQuota, limits.CPUPeriod, limits.CPUCount)
+```
+
+Fields in `Limits` are `-1` when the corresponding limit is absent or unrestricted.
+
+To sample often without re-reading the files each time, use the TTL cache. Concurrent callers share
+a single in-flight refresh:
+
+```go
+cache := cgroup.NewCache(30 * time.Second)
+
+if l := cache.Get(); l != nil {
+	// Apply the cgroup limits.
+}
+```
+
+`NewCacheWithDetector` accepts a custom detector, which is useful in tests.
+
+## Docker vs. LXC
+
+```go
+if cgroup.IsDockerContainer() {
+	// Report host totals: --cpus/--memory are operator limits, not hardware.
+} else if l := cache.Get(); l != nil {
+	// In LXC, cgroup limits are the real hardware budget.
+}
+```
+
+This distinction matters for dashboards. In Docker, cgroup limits are artificial constraints and
+should not be shown as the host's totals. In LXC, the limits *are* the container's budget, and
+`/proc` would over-report it. Detection checks for `/.dockerenv` and falls back to patterns in
+`/proc/self/cgroup`.
+
+## Container identity
+
+| Function | Description |
+| --- | --- |
+| `CurrentContainerID()` | Tries cgroup, then mountinfo, then hostname |
+| `DockerHostRoot(containerID)` | Finds the guest root for a Docker process in a shared cgroup v2 namespace. You must also check the host's cgroup mode with the Docker daemon |
+| `MemoryUsage(root)` | cgroup v2 memory usage excluding file cache, in bytes |
+
+## ZFS ARC
+
+The kernel counts ZFS ARC as used memory, so tools that compute
+`Used = Total - MemAvailable` over-report usage on ZFS hosts. Subtract the reclaimable part:
+
+```go
+used := vm.Used - cgroup.ZFSARCReclaimable()
+```
+
+On systems without the ZFS module, including macOS, it returns `0` cheaply.

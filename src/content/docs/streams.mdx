@@ -1,0 +1,159 @@
+---
+title: streams
+description: JSON-lines fan-in, event buses, log broadcasting, and container stats history.
+---
+
+import ModuleInfo from '../../components/ModuleInfo.astro';
+
+`streams` provides building blocks for live views: aggregating many producers into
+one JSON-lines response, sharing poll loops between subscribers, fanning out Docker events, and
+keeping recent logs and stats in memory.
+
+<ModuleInfo path="streams" />
+
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| [`streams/agg`](#streamsagg) | JSON-lines fan-in, shared poll loops, per-environment pollers |
+| [`streams/bus`](#streamsbus) | Typed in-process pub/sub for Docker events |
+| [`streams/logs`](#streamslogs) | `slog` capture into a ring buffer with live subscribers |
+| [`streams/stats`](#streamsstats) | Compact per-container CPU and memory history |
+
+## streams/agg
+
+### Run: fan-in to JSON lines
+
+`agg.Run` merges events from several producers, writes each one as a JSON line, and flushes after
+each write. It returns when `ctx` is canceled or encoding fails.
+
+```go
+import "go.getarcane.app/streams/agg"
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	flusher := w.(http.Flusher)
+
+	_ = agg.Run(r.Context(), agg.Config[Event]{
+		Writer:            w,
+		Flush:             flusher.Flush,
+		HeartbeatInterval: 15 * time.Second,
+		MakeHeartbeat:     func() Event { return Event{Type: "heartbeat"} },
+		Producers: []agg.Producer[Event]{
+			func(ctx context.Context, events chan<- Event) {
+				for ev := range watchContainers(ctx) {
+					if !agg.Send(ctx, events, ev) {
+						return
+					}
+				}
+			},
+		},
+	})
+}
+```
+
+`agg.Send` gives up when `ctx` is done, so a producer can never block forever. An invalid
+configuration returns `*agg.InvalidConfigError`.
+
+### Hub: share poll loops
+
+A `Hub` makes sure only one poll loop runs for each key, however many clients subscribe.
+The first subscriber starts the runner, and it stops when the last one leaves. Each subscriber gets
+events through a latest-wins mailbox, so a slow client skips to the newest state and never stalls
+the others.
+
+```go
+hub := agg.NewHub[Snapshot]()
+
+hub.Subscribe(ctx, envID,
+	func(ctx context.Context, publish func(Snapshot)) {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			publish(poll(ctx, envID))
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	},
+	func(s Snapshot) bool { return send(s) == nil },
+)
+```
+
+:::note
+Because delivery is latest-wins, hub events must be **states** (snapshots, errors), not deltas.
+:::
+
+### Reconcilers
+
+- `ReconcilePollersByKey` keeps one poller goroutine for each listed item, restarting it when the
+  item's version changes.
+- `ReconcileEnvironmentPollers` is a version of the above for a `RemoteEnvironmentLister`.
+
+## streams/bus
+
+`DockerEventBus` fans out Docker daemon events by type. Delivery never blocks. A message that
+doesn't fit in a subscriber's buffer is dropped and reported to an optional callback.
+
+```go
+import "go.getarcane.app/streams/bus"
+
+b := bus.NewDockerEventBus(bus.WithDroppedEventCallback(func(m events.Message) {
+	slog.Warn("dropped docker event", "type", m.Type, "action", m.Action)
+}))
+defer b.Close()
+
+containers, unsubscribe := b.Subscribe(events.ContainerEventType, bus.WithSubscriberBuffer(64))
+defer unsubscribe()
+
+go func() {
+	for msg := range dockerEvents {
+		b.Publish(msg)
+	}
+}()
+```
+
+## streams/logs
+
+Captures `slog` records into a ring buffer and sends new entries to live subscribers. This is
+useful for showing an application's own logs in its UI.
+
+```go
+import "go.getarcane.app/streams/logs"
+
+broadcaster := logs.New(1000)
+slog.SetDefault(slog.New(logs.NewSlogHandler(slog.NewJSONHandler(os.Stderr, nil), broadcaster)))
+
+recent := broadcaster.Recent()        // oldest first
+live, unsubscribe := broadcaster.Subscribe()
+defer unsubscribe()
+```
+
+## streams/stats
+
+`Store` keeps a bounded history of compact samples for each container. Each sample holds CPU and
+memory in tenths of a percent, plus memory bytes.
+
+```go
+import "go.getarcane.app/streams/stats"
+
+store := stats.NewStore(
+	stats.WithCapacity(60),              // samples per container (default 30)
+	stats.WithTTL(10*time.Minute),       // evict inactive containers
+	stats.WithPruneInterval(time.Minute),
+)
+
+sample := stats.BuildSample(resp) // from a Docker StatsResponse
+history := store.Record(containerID, sample, true, time.Now())
+
+payload := stats.StatsStreamPayload{
+	StatsResponse:        resp,
+	StatsHistory:         history,
+	CurrentHistorySample: sample,
+}
+```
+
+`BuildSample` computes CPU as `cpuDelta / systemDelta` without the Docker CLI's online-CPU
+multiplier, so values stay on a 0–100 scale.

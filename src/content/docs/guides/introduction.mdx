@@ -1,0 +1,50 @@
+---
+title: Introduction
+description: What the go.getarcane.app modules are and how they are organized.
+---
+
+import { LinkCard } from '@astrojs/starlight/components';
+
+The `go.getarcane.app` modules are a set of reusable Go modules for Docker tooling, root-confined
+filesystem access, streaming, and system probes. They live in the
+[`getarcaneapp/kit`](https://github.com/getarcaneapp/kit) repository.
+
+Application-specific concerns such as settings, persistence, and notifications are passed in
+through small interfaces, so the modules fit into any Go application.
+
+## Module map
+
+| Module | Import path | Use it for |
+| --- | --- | --- |
+| [kit](/kit/) | `go.getarcane.app/kit` | Shared helpers used by the other modules |
+| [acfs](/acfs/) | `go.getarcane.app/acfs` | Filesystem access that can never escape a root directory |
+| [docker](/docker/) | `go.getarcane.app/docker` | Day-to-day Docker Engine API helpers |
+| [docker/compat](/docker/compat/) | `go.getarcane.app/docker/compat` | Working against older daemons and Podman |
+| [docker/convert](/docker/convert/) | `go.getarcane.app/docker/convert` | `docker run` → Compose conversion |
+| [builds](/builds/) | `go.getarcane.app/builds` | BuildKit builds via Docker or Depot |
+| [updater](/updater/) | `go.getarcane.app/updater` | Keeping containers on current images |
+| [streams](/streams/) | `go.getarcane.app/streams` | Live streams, event fan-out, log capture |
+| [sys/bytes](/sys/bytes/) | `go.getarcane.app/sys/bytes` | Parsing and printing byte sizes |
+| [sys/cgroup](/sys/cgroup/) | `go.getarcane.app/sys/cgroup` | Container resource limits and identity |
+| [sys/crypto](/sys/crypto/) | `go.getarcane.app/sys/crypto` | Encrypting stored secrets |
+
+## How the repository is laid out
+
+`kit` is the root module of the repository. Every other module is a nested module with its own
+`go.mod`:
+
+- Nested modules may import `kit`. `kit` never imports a nested module.
+- Code only moves into `kit` once it has a concrete contract that more than one module needs.
+- Each module is tagged independently, for example `updater/v0.11.4` or `sys/crypto/v0.3.0`.
+
+## Stability
+
+:::caution
+Every module is below v1.0.0. Under Go's module rules, minor releases (`v0.x.0`) can contain
+breaking API changes. Pin versions in `go.mod` and read each module's `CHANGELOG.md` before you
+upgrade.
+:::
+
+## Next steps
+
+<LinkCard title="Installation" href="/guides/installation/" description="Toolchain requirements and adding a module to your project." />

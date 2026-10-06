@@ -1,0 +1,76 @@
+---
+title: Installation
+description: Requirements and how to add a go.getarcane.app module to your project.
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Requirements
+
+- **Go 1.27 or newer.** Every module declares `go 1.27` in its `go.mod`.
+- **A Docker Engine** for the Docker-facing modules (`docker`, `docker/compat`, `builds`,
+  `updater`). They talk to the daemon through the official
+  [`github.com/moby/moby/client`](https://pkg.go.dev/github.com/moby/moby/client) module.
+- **Linux** for the probes in `sys/cgroup`. On other platforms they quietly return zero values.
+
+## Add a module
+
+<Steps>
+
+1. Fetch the module you need. Each one is versioned on its own, so install only the ones you use:
+
+   ```sh
+   go get go.getarcane.app/acfs@latest
+   ```
+
+2. Import it:
+
+   ```go
+   import "go.getarcane.app/acfs"
+   ```
+
+3. Tidy your module graph:
+
+   ```sh
+   go mod tidy
+   ```
+
+</Steps>
+
+## Pinning a version
+
+Tags are prefixed with the module's directory, but you don't need to include that prefix when you
+ask the Go toolchain for a version:
+
+<Tabs>
+	<TabItem label="Root module">
+		```sh
+		go get go.getarcane.app/kit@v0.4.0
+		```
+	</TabItem>
+	<TabItem label="Nested module">
+		```sh
+		# Tagged in the repository as updater/v0.11.4
+		go get go.getarcane.app/updater@v0.11.4
+		```
+	</TabItem>
+</Tabs>
+
+To list the available versions:
+
+```sh
+go list -m -versions go.getarcane.app/updater
+```
+
+## Working on the modules locally
+
+If you are changing a module alongside your application, point your build at a local checkout with
+a Go workspace:
+
+```sh
+git clone https://github.com/getarcaneapp/kit
+go work init . ./kit/updater ./kit
+```
+
+The `kit` repository has its own `go.work` that already includes every nested module, so you can
+run `go test ./...` from inside any module directory.

@@ -1,0 +1,20 @@
+/*
+ * Brand color overrides for the Lucode theme.
+ * Lucode declares its tokens inside `@layer lucode`, so these unlayered rules win.
+ */
+
+:root[data-theme='dark'] {
+	--brand-violet: oklch(0.65 0.24 292.717);
+	--primary: var(--brand-violet);
+	--primary-foreground: oklch(0.985 0 0);
+	--ring: var(--brand-violet);
+	--sl-color-text-accent: oklch(0.78 0.15 292.717);
+}
+
+:root[data-theme='light'] {
+	--brand-violet: oklch(0.58 0.26 292.717);
+	--primary: var(--brand-violet);
+	--primary-foreground: oklch(0.985 0 0);
+	--ring: var(--brand-violet);
+	--sl-color-text-accent: var(--brand-violet);
+}
