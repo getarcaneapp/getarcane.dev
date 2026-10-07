@@ -1,14 +1,25 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "getarcane-dev-docs",
+	"name": "getarcane-dev",
+	"main": "./src/worker.ts",
 	"compatibility_date": "2026-10-01",
+	"observability": {
+		"enabled": true
+	},
 	"assets": {
 		"directory": "./dist",
-		"not_found_handling": "404-page"
+		"binding": "ASSETS",
+		"not_found_handling": "404-page",
+		// The Worker must see every request to answer `?go-get=1` on any path.
+		"run_worker_first": true
 	},
 	"routes": [
 		{
 			"pattern": "getarcane.dev",
+			"custom_domain": true
+		},
+		{
+			"pattern": "go.getarcane.app",
 			"custom_domain": true
 		}
 	]
