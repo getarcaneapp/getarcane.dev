@@ -3,7 +3,7 @@ title: sys/bytes
 description: Byte capacities that parse and print like common Linux tools.
 ---
 
-import ModuleInfo from '../../../components/ModuleInfo.astro';
+import ModuleInfo from "../../../components/ModuleInfo.astro";
 
 `sys/bytes` has one central type, `Capacity`: a `uint64` byte count that prints itself the way
 `df -h` does (`10.4G`) and parses that format back. It depends only on the standard library.
@@ -42,13 +42,13 @@ flag.Parse()
 
 ## Constants
 
-| SI (base 10) | IEC (base 2) |
-| --- | --- |
+| SI (base 10)      | IEC (base 2)      |
+| ----------------- | ----------------- |
 | `Kilobyte` = 1000 | `Kibibyte` = 1024 |
-| `Megabyte` | `Mebibyte` |
-| `Gigabyte` | `Gibibyte` |
-| `Terabyte` | `Tebibyte` |
-| `Petabyte` | `Pebibyte` |
-| `Exabyte` | `Exbibyte` |
+| `Megabyte`        | `Mebibyte`        |
+| `Gigabyte`        | `Gibibyte`        |
+| `Terabyte`        | `Tebibyte`        |
+| `Petabyte`        | `Pebibyte`        |
+| `Exabyte`         | `Exbibyte`        |
 
 Each unit has a matching integer accessor on `Capacity`, such as `Gigabytes()` and `Gibibytes()`.

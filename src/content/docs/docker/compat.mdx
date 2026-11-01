@@ -3,7 +3,7 @@ title: docker/compat
 description: Make container create and inspect work against older Docker daemons and Podman.
 ---
 
-import ModuleInfo from '../../../components/ModuleInfo.astro';
+import ModuleInfo from "../../../components/ModuleInfo.astro";
 
 `docker/compat` makes newer Docker features depend on the API version the daemon actually supports,
 so in-process API callers work against older engines and Podman. The Docker CLI applies these
@@ -23,22 +23,27 @@ api := compat.WrapDockerAPIClientForInspectCompatibility(cli)
 
 ## Container create
 
-`ContainerCreateWithCompatibility` detects the daemon's API version and adjusts the request:
+`ContainerCreateWithCompatibility` takes a `CreateRequest`. It finds the daemon's API version and
+adjusts the request:
 
 - **Before API 1.44**, daemons don't reliably accept multiple `EndpointsConfig` entries. The
   container is created on its primary network, and the other networks are attached with
   `NetworkConnect` before it returns. If an attachment fails, the half-connected container is
   removed, even if `ctx` was canceled.
-- **Before API 1.44**, per-network MAC addresses are dropped from the endpoint settings.
 
 ```go
-res, err := compat.ContainerCreateWithCompatibility(ctx, cli, client.ContainerCreateOptions{
-	Config:           cfg,
-	HostConfig:       hostCfg,
-	NetworkingConfig: netCfg,
-	Name:             "web",
+res, err := compat.ContainerCreateWithCompatibility(ctx, cli, compat.CreateRequest{
+	Options: client.ContainerCreateOptions{
+		Config:           cfg,
+		HostConfig:       hostCfg,
+		NetworkingConfig: netCfg,
+		Name:             "web",
+	},
 })
 ```
+
+Leave `APIVersion` empty to detect the version with `DetectDockerAPIVersion`. Set it when you
+already know the version and want to skip that call.
 
 For more control, call the steps yourself:
 
@@ -49,11 +54,19 @@ opts, withheld := compat.PrepareContainerCreateOptionsForDockerAPI(opts, version
 err = compat.ConnectContainerExtraNetworksForDockerAPI(ctx, cli, id, withheld)
 ```
 
+Daemons before API 1.44 also reject per-network MAC addresses. The create call does not remove
+them for you. Use `SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints, version)` to get
+a deep copy of the endpoint settings with those MAC addresses dropped.
+
 ## Inspect and list
 
 Newer Moby address types reject CIDR suffixes that some daemons include. `ContainerInspectWithCompatibility`,
 `NetworkInspectWithCompatibility`, and `NetworkListWithCompatibility` retry a failed typed decode
 against the raw JSON with those suffixes removed.
+
+Legacy networks can also report a bare address in an IPAM `Subnet` or `IPRange`, such as
+`192.168.0.3`. The network repair rewrites it to a single-host prefix (`/32` or `/128`), so one bad
+network no longer fails the whole list.
 
 ## Recreating on Podman
 
@@ -61,17 +74,29 @@ Podman with cgroup v2 rejects some `HostConfig` fields that Docker accepts, such
 `MemorySwappiness`. Before you recreate a container:
 
 ```go
-hostCfg, changed, engine, err := compat.PrepareRecreateHostConfigForEngine(ctx, cli, inspect.HostConfig)
+hostCfg, changed, engine, err := compat.PrepareRecreateHostConfigForEngine(ctx, cli, containerID, inspect.HostConfig)
+if err != nil {
+	return err
+}
 if changed {
-	log.Info("sanitized host config", "engine", engine.Name, "cgroup", engine.CgroupVersion)
+	slog.Info("sanitized host config", "engine", engine.Name, "cgroup", engine.CgroupVersion)
 }
 ```
 
+The function returns a shallow copy and leaves your `HostConfig` unchanged. On Podman, a container
+whose `UsernsMode` is `private` is looked up by `containerID`. If it was started with a `keep-id`
+user namespace, the copy gets `UsernsMode` set to `keep-id:uid=<uid>,gid=<gid>`, so the recreated
+container keeps the same user mapping. Any other private user namespace returns an error.
+
+To make the decision yourself, `DetectEngineCompatibility(version, info)` builds an
+`EngineCompatibilityInfo` from the daemon's version and info responses, and its
+`SanitizeRecreateHostConfig` method removes the rejected fields in place.
+
 ## Version helpers
 
-| Symbol | Description |
-| --- | --- |
-| `DetectDockerAPIVersion` | The client's negotiated version, or the daemon's reported version |
-| `IsDockerAPIVersionAtLeast(current, min)` | Numeric comparison of dotted versions such as `1.43` and `1.44.1` |
-| `NetworkScopedMacAddressMinAPIVersion` | `"1.44"` |
-| `MultiEndpointContainerCreateMinAPIVersion` | `"1.44"` |
+| Symbol                                      | Description                                                       |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| `DetectDockerAPIVersion`                    | The client's negotiated version, or the daemon's reported version |
+| `IsDockerAPIVersionAtLeast(current, min)`   | Numeric comparison of dotted versions such as `1.43` and `1.44.1` |
+| `NetworkScopedMacAddressMinAPIVersion`      | `"1.44"`                                                          |
+| `MultiEndpointContainerCreateMinAPIVersion` | `"1.44"`                                                          |

@@ -3,8 +3,8 @@ title: updater
 description: Portable Docker auto-update orchestration for Go applications.
 ---
 
-import ModuleInfo from '../../../components/ModuleInfo.astro';
-import { Steps } from '@astrojs/starlight/components';
+import ModuleInfo from "../../../components/ModuleInfo.astro";
+import { Steps } from "@astrojs/starlight/components";
 
 `updater` is a Docker auto-update module. It pulls newer images,
 recreates the containers running them, and restarts whatever depended on those containers. It
@@ -79,21 +79,29 @@ service, err := updater.New(updater.Config{
 })
 ```
 
-| Field | Default when nil |
-| --- | --- |
-| `DockerClientProvider` | `NewDockerClientProvider()`, which reads the standard Docker environment variables |
-| `ImagePuller` | `NewImagePuller(provider)`, which uses Docker's `ImagePull` API |
-| `PendingStore` | `NewMemoryPendingStore()`, which starts empty |
-| `RegistryDigestResolver` | `NewRegistryDigestResolver()`, which uses local Docker credentials |
-| `RegistryTagLister` | `NewRegistryTagLister()`, which uses local Docker credentials |
-| `ProjectUpdater` | `NewDockerComposeProjectUpdater(provider)`, which shells out to `docker compose` |
-| `LabelPolicy` | `DefaultLabelPolicy()`, merged field by field |
-| `RunRecorder`, `Settings`, `Notifier`, `EventRecorder`, `UsedImageCollector` | Behavior disabled |
-| `SelfUpdater` | Self-update targets fail with `ErrSelfUpdaterRequired` |
-| `Logger` | `slog.Default()` |
+| Field                                                                        | Default when nil                                                                    |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `DockerClientProvider`                                                       | `NewDockerClientProvider()`, which reads the standard Docker environment variables  |
+| `ImagePuller`                                                                | `NewImagePuller(provider)`, which uses Docker's `ImagePull` API                     |
+| `PendingStore`                                                               | `NewMemoryPendingStore()`, which starts empty                                       |
+| `RegistryDigestResolver`                                                     | `NewRegistryDigestResolver()`, which uses local Docker credentials                  |
+| `RegistryTagLister`                                                          | `NewRegistryTagLister()`, which uses local Docker credentials                       |
+| `ProjectUpdater`                                                             | `NewDockerComposeProjectUpdater(provider)`, which shells out to `docker compose`    |
+| `LabelPolicy`                                                                | `DefaultLabelPolicy()`, merged field by field. `UnmanagedReasonFunc` has no default |
+| `RunRecorder`, `Settings`, `Notifier`, `EventRecorder`, `UsedImageCollector` | Behavior disabled                                                                   |
+| `SelfUpdater`                                                                | Self-update targets fail with `ErrSelfUpdaterRequired`                              |
+| `Logger`                                                                     | `slog.Default()`                                                                    |
 
-`LabelPolicy` merges field by field. Overriding `IsUpdateDisabledFunc` above keeps the default
-self-update, agent, server, Swarm, and stop-signal detection.
+`LabelPolicy` merges field by field. `New` applies `DefaultLabelPolicy().Merge(config.LabelPolicy)`,
+so overriding `IsUpdateDisabledFunc` above keeps the default tag policy and the self-update, agent,
+server, Swarm, and stop-signal detection.
+
+Set `UnmanagedReasonFunc` when another tool owns some containers' updates. It returns a reason, or
+`""` when the updater may touch the container. Containers with a reason are always skipped, even
+when a run ignores opt-outs.
+
+Set `SelfContainerID` to the ID (or ID prefix) of the container your application runs in. That
+container always goes to the `SelfUpdater`, whatever its labels.
 
 `Service.Close` shuts down the Docker client that `New` created. If you supplied your own
 `DockerClientProvider`, its lifecycle stays yours and `Close` does nothing.
@@ -105,13 +113,19 @@ self-update, agent, server, Swarm, and stop-signal detection.
 1. Resolve a pullable image reference for each in-scope container. Image IDs and digest-pinned
    references are skipped, because pulling them again can never produce a newer image.
 2. Skip containers the `LabelPolicy` disables, containers the host excludes through
-   `SettingsProvider`, and Swarm tasks.
+   `SettingsProvider`, Swarm tasks, and containers `UnmanagedReasonFunc` reports as owned by
+   another tool. A user-requested run can skip the first two checks. See
+   [Overriding opt-outs](#overriding-opt-outs).
 3. Select a newer eligible version tag, or compare the configured tag's digest. See
    [tag policies](/updater/tag-policies/).
-4. Pull the target image.
+4. Pull the target image. Container-scoped and tag updates are pulled and recreated one dependency
+   unit at a time. A unit is a set of containers joined by dependencies or a Compose project. The
+   next unit is pulled only after the previous one is recreated, so a canceled run never leaves
+   running containers on an image whose tag a pull already moved.
 5. Recreate the container. Compose services go through the `ProjectUpdater`, grouped by project and
-   then checked to confirm they no longer run the old image. Standalone containers are stopped,
-   created, and started directly, with rollback on failure.
+   then checked to confirm they no longer run the old image. Standalone containers are recreated
+   directly, following the Docker and Compose rules for what to keep. See
+   [Standalone recreation](#standalone-recreation).
 6. Restart containers that depend on what just changed, in dependency order.
 7. Hand self-update targets to the `SelfUpdater` last, since updating them may stop the calling
    process.
@@ -120,6 +134,50 @@ self-update, agent, server, Swarm, and stop-signal detection.
 
 Scheduling, durable persistence, and user-facing notifications are not the module's job. Supply
 adapters for those.
+
+### Standalone recreation
+
+1. Stop the container with its configured stop signal.
+2. Rename it to `<name>-arcane-update-<unix time>` so it is kept as a backup.
+3. Create the replacement under the original name. Named, anonymous, and image-declared volumes
+   are reattached by name, so their data is kept. A `container:<id>` network mode is rewritten to
+   the owner's name.
+4. Start the replacement only if the original was running.
+5. Remove the backup once the replacement has started.
+
+If create or start fails, the replacement is removed and the backup gets its original name back.
+It is started again if it was running. A container created with `--rm` is removed by Docker when it
+stops, so it has no backup. It is recreated from its old image ID instead.
+
+## Overriding opt-outs
+
+`Options{IgnoreSettingsExclusions: true}` is for runs a user asked for, such as a manual update.
+It lets `UpdateContainer` and `ApplyPending` update the containers they target even when:
+
+- the `SettingsProvider` excludes them, or
+- the `com.getarcaneapp.arcane.updater` label opts them out.
+
+The exclusion and the label stay in place. Some checks still apply:
+
+- Containers restarted only because a dependency changed still honor both opt-outs.
+- Swarm tasks, unmanaged containers, and image IDs or digest-pinned references stay ineligible.
+
+```go
+result, err := service.UpdateContainer(ctx, containerID, updater.Options{
+	IgnoreSettingsExclusions: true,
+})
+```
+
+To restart containers still running replaced images yourself, pass a `RestartTargets`:
+
+```go
+restarted, err := service.RestartContainersUsingOldImages(ctx, updater.RestartTargets{
+	ByOldID:  map[string]string{"sha256:old-image-id": "nginx:1.27"},
+	ByOldRef: map[string]string{"nginx:1.26": "nginx:1.27"},
+})
+```
+
+`RestartTargets.IgnoreSettingsExclusions` works like the `Options` field above.
 
 ## Checking without updating
 
@@ -140,27 +198,27 @@ if check.UpdateAvailable {
 
 The default `LabelPolicy` reads these labels. They are also exported from `updater/labels`.
 
-| Label | Effect |
-| --- | --- |
-| `com.getarcaneapp.arcane.updater` | `false` (or `0`, `no`, `off`) opts the container out of updates |
-| `com.getarcaneapp.arcane.updater.strategy` | `digest`, `tag`, or `auto` |
-| `com.getarcaneapp.arcane.updater.constraint` | Semver range for tag updates |
-| `com.getarcaneapp.arcane.updater.tag-pattern` | Regex that selects tags and captures their version |
-| `com.getarcaneapp.arcane.depends-on` | Comma-separated container names to restart in dependency order |
-| `com.getarcaneapp.arcane.stop-signal` | Custom stop signal |
-| `com.getarcaneapp.arcane` / `.agent` | Marks a self-update target, which is handed to the `SelfUpdater` |
+| Label                                         | Effect                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------- |
+| `com.getarcaneapp.arcane.updater`             | `false` (or `0`, `no`, `off`) opts the container out of updates  |
+| `com.getarcaneapp.arcane.updater.strategy`    | `digest`, `tag`, or `auto`                                       |
+| `com.getarcaneapp.arcane.updater.constraint`  | Semver range for tag updates                                     |
+| `com.getarcaneapp.arcane.updater.tag-pattern` | Regex that selects tags and captures their version               |
+| `com.getarcaneapp.arcane.depends-on`          | Comma-separated container names to restart in dependency order   |
+| `com.getarcaneapp.arcane.stop-signal`         | Custom stop signal                                               |
+| `com.getarcaneapp.arcane` / `.agent`          | Marks a self-update target, which is handed to the `SelfUpdater` |
 
 ## Packages
 
-| Package | Contents |
-| --- | --- |
-| `updater` | `Service`, `Config`, the adapter interfaces, and the result types |
-| `updater/refs` | Image reference normalization and pullability checks |
-| `updater/digest` | OCI digest parsing and canonicalization |
-| `updater/labels` | The container label keys and the functions that read them |
-| `updater/registry` | Registry tag listing, digest lookups, and pull rate limits |
-| `updater/types` | `Policy`, `CheckRequest`, `CheckResult`, and Compose adapter contracts |
-| `updater/pkg/utils/tagpolicy` | Semantic-version tag selection |
+| Package                       | Contents                                                                                                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `updater`                     | `Service`, `Config`, the adapter interfaces, and the result types                                                                              |
+| `updater/refs`                | Image reference normalization and pullability checks                                                                                           |
+| `updater/digest`              | OCI digest parsing and canonicalization                                                                                                        |
+| `updater/labels`              | The container label keys and the functions that read them                                                                                      |
+| `updater/registry`            | Registry tag listing, digest lookups, and pull rate limits. `FetchTags`, `FetchDigest`, and `FetchRegistryRateLimit` take a `registry.Request` |
+| `updater/types`               | `Policy`, `CheckRequest`, `CheckResult`, and Compose adapter contracts                                                                         |
+| `updater/pkg/utils/tagpolicy` | Semantic-version tag selection                                                                                                                 |
 
 ## Errors
 

@@ -3,18 +3,29 @@
  * Lucode declares its tokens inside `@layer lucode`, so these unlayered rules win.
  */
 
-:root[data-theme='dark'] {
-	--brand-violet: oklch(0.65 0.24 292.717);
-	--primary: var(--brand-violet);
-	--primary-foreground: oklch(0.985 0 0);
-	--ring: var(--brand-violet);
-	--sl-color-text-accent: oklch(0.78 0.15 292.717);
+:root[data-theme="dark"] {
+  --brand-violet: oklch(0.65 0.24 292.717);
+  --primary: var(--brand-violet);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: var(--brand-violet);
+  --sl-color-text-accent: oklch(0.78 0.15 292.717);
 }
 
-:root[data-theme='light'] {
-	--brand-violet: oklch(0.58 0.26 292.717);
-	--primary: var(--brand-violet);
-	--primary-foreground: oklch(0.985 0 0);
-	--ring: var(--brand-violet);
-	--sl-color-text-accent: var(--brand-violet);
+:root[data-theme="light"] {
+  --brand-violet: oklch(0.58 0.26 292.717);
+  --primary: var(--brand-violet);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: var(--brand-violet);
+  --sl-color-text-accent: var(--brand-violet);
+}
+
+/*
+ * Lucode caps the header logo at 32x32, sized for a square icon. The full-width
+ * Arcane logo is about 4:1, so size it by height and let the width follow.
+ */
+.site-title .logo {
+  height: 2rem;
+  width: auto;
+  max-width: none;
+  max-height: none;
 }

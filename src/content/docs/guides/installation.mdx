@@ -3,7 +3,7 @@ title: Installation
 description: Requirements and how to add a go.getarcane.app module to your project.
 ---
 
-import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 
 ## Requirements
 
@@ -43,17 +43,10 @@ Tags are prefixed with the module's directory, but you don't need to include tha
 ask the Go toolchain for a version:
 
 <Tabs>
-	<TabItem label="Root module">
-		```sh
-		go get go.getarcane.app/kit@v0.4.0
-		```
-	</TabItem>
-	<TabItem label="Nested module">
-		```sh
-		# Tagged in the repository as updater/v0.11.4
-		go get go.getarcane.app/updater@v0.11.4
-		```
-	</TabItem>
+  <TabItem label="Root module">```sh go get go.getarcane.app/kit@v0.4.0 ```</TabItem>
+  <TabItem label="Nested module">
+    ```sh # Tagged in the repository as updater/v0.11.4 go get go.getarcane.app/updater@v0.11.4 ```
+  </TabItem>
 </Tabs>
 
 To list the available versions:

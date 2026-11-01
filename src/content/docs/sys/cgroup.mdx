@@ -3,7 +3,7 @@ title: sys/cgroup
 description: Detect cgroup resource limits and container identity for the current process.
 ---
 
-import ModuleInfo from '../../../components/ModuleInfo.astro';
+import ModuleInfo from "../../../components/ModuleInfo.astro";
 
 `sys/cgroup` inspects the environment the current process runs in: cgroup v1 and v2 CPU and memory
 limits, whether it is inside Docker or LXC, its own container ID, and how much ZFS ARC memory can be
@@ -29,17 +29,22 @@ fmt.Println(limits.MemoryLimit, limits.CPUQuota, limits.CPUPeriod, limits.CPUCou
 Fields in `Limits` are `-1` when the corresponding limit is absent or unrestricted.
 
 To sample often without re-reading the files each time, use the TTL cache. Concurrent callers share
-a single in-flight refresh:
+a single in-flight refresh. `Get` returns nil when no cgroup limits were detected:
 
 ```go
-cache := cgroup.NewCache(30 * time.Second)
+cache := cgroup.NewCache(cgroup.CacheConfig{TTL: 30 * time.Second})
 
 if l := cache.Get(); l != nil {
 	// Apply the cgroup limits.
 }
 ```
 
-`NewCacheWithDetector` accepts a custom detector, which is useful in tests.
+`CacheConfig` has two fields:
+
+- `TTL` is how long a result is reused. Zero or negative disables caching.
+- `Detector` replaces `DetectLimits`, which is useful in tests. Nil uses `DetectLimits`.
+
+The zero `CacheConfig`, and the zero `Cache`, run `DetectLimits` on every `Get`.
 
 ## Docker vs. LXC
 
@@ -52,17 +57,20 @@ if cgroup.IsDockerContainer() {
 ```
 
 This distinction matters for dashboards. In Docker, cgroup limits are artificial constraints and
-should not be shown as the host's totals. In LXC, the limits *are* the container's budget, and
+should not be shown as the host's totals. In LXC, the limits _are_ the container's budget, and
 `/proc` would over-report it. Detection checks for `/.dockerenv` and falls back to patterns in
 `/proc/self/cgroup`.
 
+`IsDockerContainer` and `CurrentContainerID` are memoized. The first call does the detection, and
+later calls return the same result for the life of the process.
+
 ## Container identity
 
-| Function | Description |
-| --- | --- |
-| `CurrentContainerID()` | Tries cgroup, then mountinfo, then hostname |
+| Function                      | Description                                                                                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CurrentContainerID()`        | Tries cgroup, then mountinfo, then hostname                                                                                                  |
 | `DockerHostRoot(containerID)` | Finds the guest root for a Docker process in a shared cgroup v2 namespace. You must also check the host's cgroup mode with the Docker daemon |
-| `MemoryUsage(root)` | cgroup v2 memory usage excluding file cache, in bytes |
+| `MemoryUsage(root)`           | cgroup v2 memory usage excluding file cache, in bytes                                                                                        |
 
 ## ZFS ARC
 

@@ -3,7 +3,7 @@ title: docker
 description: Helpers for working with the Docker Engine API.
 ---
 
-import ModuleInfo from '../../../components/ModuleInfo.astro';
+import ModuleInfo from "../../../components/ModuleInfo.astro";
 
 `docker` collects everyday Docker Engine API helpers: container names and
 Compose labels, mount translation, network selection, exec, log streaming, progress rendering, and
@@ -27,23 +27,29 @@ if docker.ContainerNameExcluded(summary.Names, excluded) {
 }
 ```
 
-| Function | Description |
-| --- | --- |
-| `ComposeProjectLabel` / `ComposeServiceLabel` | Trimmed `com.docker.compose.project` / `.service` label values |
-| `ContainerNameFromNames` | First container name, without Docker's leading slash |
-| `ExcludedContainerNameSet` / `ContainerNameExcluded` | Parse and test a comma-separated exclusion setting |
-| `ContainerAnswersToHostname` | Reports whether a container is reachable as a hostname by name, Compose service, or DNS alias |
+| Function                                             | Description                                                                                   |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `ComposeProjectLabel` / `ComposeServiceLabel`        | Trimmed `com.docker.compose.project` / `.service` label values                                |
+| `ContainerNameFromNames`                             | First container name, without Docker's leading slash                                          |
+| `ExcludedContainerNameSet` / `ContainerNameExcluded` | Parse and test a comma-separated exclusion setting                                            |
+| `ContainerAnswersToHostname`                         | Reports whether a container is reachable as a hostname by name, Compose service, or DNS alias |
 
 ## Exec
 
-`ExecInContainer` runs a command, splits the multiplexed output into stdout and stderr, and returns
-the exit code. A non-zero exit code is **not** an error. The caller decides what it means.
+`ExecInContainer` takes an `ExecRequest`. It runs the command, splits the multiplexed output into
+`Stdout` and `Stderr`, and returns the exit code. A non-zero exit code is **not** an error. The
+caller decides what it means.
 
 ```go
 var stdout, stderr bytes.Buffer
-code, err := docker.ExecInContainer(ctx, cli, containerID, client.ExecCreateOptions{
-	Cmd: []string{"pg_dump", "-U", "postgres", "app"},
-}, &stdout, &stderr)
+code, err := docker.ExecInContainer(ctx, cli, docker.ExecRequest{
+	Stdout:      &stdout,
+	Stderr:      &stderr,
+	ContainerID: containerID,
+	Options: client.ExecCreateOptions{
+		Cmd: []string{"pg_dump", "-U", "postgres", "app"},
+	},
+})
 ```
 
 For lower-level streams, `StartStdCopy` demultiplexes in a goroutine and `WaitStdCopy` waits for it,
@@ -55,7 +61,10 @@ treating a normal end of stream as success.
 logs := make(chan string)
 go func() {
 	defer close(logs)
-	_ = docker.StreamContainerLogs(ctx, reader, logs, true /* follow */, inspect.Config.Tty)
+	_ = docker.StreamContainerLogs(ctx, reader, logs, docker.LogOptions{
+		Follow: true,
+		TTY:    inspect.Config.Tty,
+	})
 }()
 
 for line := range logs {
@@ -63,14 +72,14 @@ for line := range logs {
 }
 ```
 
-| Function | Description |
-| --- | --- |
-| `StreamContainerLogs` | Handles both raw TTY streams and multiplexed stdout/stderr |
-| `StreamMultiplexedLogs` | Demultiplexes and sends non-empty lines |
-| `ReadAllLogs` | Same as above, for non-follow streams |
-| `ReadLogLines` | Sends each line from any reader with an optional prefix |
-| `IsExpectedStreamEndError` | Tells a normal end of stream apart from a real failure |
-| `NewLogLineWriter` | Wraps an `io.Writer` so each written line becomes a `{"log":"..."}` NDJSON frame |
+| Function                   | Description                                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `StreamContainerLogs`      | Handles both raw TTY streams and multiplexed stdout/stderr. `LogOptions` sets `Follow` and `TTY`                          |
+| `StreamMultiplexedLogs`    | Demultiplexes and sends non-empty lines. Stderr lines get a `[STDERR] ` prefix. A read error on either stream is returned |
+| `ReadAllLogs`              | Same as above, for non-follow streams                                                                                     |
+| `ReadLogLines`             | Sends each line from any reader with an optional prefix                                                                   |
+| `IsExpectedStreamEndError` | Tells a normal end of stream apart from a real failure                                                                    |
+| `NewLogLineWriter`         | Wraps an `io.Writer` so each written line becomes a `{"log":"..."}` NDJSON frame                                          |
 
 ## Progress
 
@@ -82,16 +91,16 @@ receives progress output, such as one wrapping an HTTP response.
 
 ## Mounts
 
-These helpers let a *helper container* see the same files as the current container. They work
+These helpers let a _helper container_ see the same files as the current container. They work
 whether those files come from bind mounts or named volumes.
 
-| Function | Description |
-| --- | --- |
-| `MountForDestination` | Mirrors an existing mount at a new target |
-| `MountForSubpath` | Exposes a subtree of an existing mount. Named volumes use `VolumeOptions.Subpath`, so this works on Docker Desktop and Docker-in-Docker |
-| `MountForEnclosingPath` | Like `MountForSubpath`, but the subpath doesn't need to exist yet. Useful for restores |
-| `NestedMounts` | Mirrors every mount nested below a path, parents before children |
-| `PreserveVolumeMounts` | Pins anonymous volumes to their names so a recreated container reuses them |
+| Function                | Description                                                                                                                             |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `MountForDestination`   | Mirrors an existing mount at a new target                                                                                               |
+| `MountForSubpath`       | Exposes a subtree of an existing mount. Named volumes use `VolumeOptions.Subpath`, so this works on Docker Desktop and Docker-in-Docker |
+| `MountForEnclosingPath` | Like `MountForSubpath`, but the subpath doesn't need to exist yet. Useful for restores                                                  |
+| `NestedMounts`          | Mirrors every mount nested below a path, parents before children                                                                        |
+| `PreserveVolumeMounts`  | Pins anonymous volumes to their names so a recreated container reuses them                                                              |
 
 ```go
 // The current container mounts /app/data, and we want a helper container to see
@@ -101,21 +110,21 @@ m := docker.MountForSubpath(self.Mounts, "/app/data/projects/demo", "/workspace"
 
 ## Networks
 
-| Function | Description |
-| --- | --- |
-| `SelectAutoNetworkMode` | Chooses the network a helper container should share, preferring user-defined networks |
+| Function                               | Description                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `SelectAutoNetworkMode`                | Chooses the network a helper container should share, preferring user-defined networks       |
 | `SelectDockerHostReachableNetworkMode` | Chooses a network from which a TCP `DOCKER_HOST` (for example, a socket proxy) is reachable |
-| `IsDefaultNetwork` | Reports whether a name is one of Docker's built-in networks |
-| `BuildNetworkUsageMaps` | Indexes network attachments by ID and by name |
+| `IsDefaultNetwork`                     | Reports whether a name is one of Docker's built-in networks                                 |
+| `BuildNetworkUsageMaps`                | Indexes network attachments by ID and by name                                               |
 
 ## Volumes
 
 Volume usage (`docker system df -v`) is slow, so it is cached for each daemon:
 
-| Function | Description |
-| --- | --- |
-| `GetVolumeUsageData` | Current data. Concurrent callers share one in-flight refresh |
-| `GetVolumeUsageDataStaleWhileRevalidate` | Returns the cached snapshot immediately (as `mo.Option`) and refreshes in the background |
-| `FetchVolumeUsageData` | Skips the cache |
-| `InvalidateVolumeUsageCache` | Clears the cache after a change |
-| `GetContainersUsingVolume` / `FilterContainersUsingVolume` | Containers that mount a volume. For batches, list containers once and use `Filter…` |
+| Function                                                   | Description                                                                              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GetVolumeUsageData`                                       | Current data. Concurrent callers share one in-flight refresh                             |
+| `GetVolumeUsageDataStaleWhileRevalidate`                   | Returns the cached snapshot immediately (as `mo.Option`) and refreshes in the background |
+| `FetchVolumeUsageData`                                     | Skips the cache                                                                          |
+| `InvalidateVolumeUsageCache`                               | Clears the cache after a change                                                          |
+| `GetContainersUsingVolume` / `FilterContainersUsingVolume` | Containers that mount a volume. For batches, list containers once and use `Filter…`      |

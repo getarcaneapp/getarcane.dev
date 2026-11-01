@@ -3,7 +3,7 @@ title: sys/crypto
 description: AES-256-GCM string encryption with key rotation.
 ---
 
-import ModuleInfo from '../../../components/ModuleInfo.astro';
+import ModuleInfo from "../../../components/ModuleInfo.astro";
 
 `sys/crypto` encrypts and decrypts strings with AES-256-GCM, for example to encrypt
 stored credentials. It supports key rotation: older keys can
@@ -21,7 +21,7 @@ if err != nil {
 	return err
 }
 
-enc, err := crypto.New(key)
+enc, err := crypto.New(crypto.Keys{Primary: key})
 if err != nil {
 	return err
 }
@@ -31,16 +31,17 @@ plaintext, err := enc.Decrypt(ciphertext)
 ```
 
 - `Encrypt("")` returns `""`, so empty, nullable fields stay empty.
+- Every key passed to `New` must be `crypto.KeySize` (32) bytes.
 - Each call uses a fresh random 96-bit nonce. Don't encrypt more than 2³² messages with one key.
 
 ## Key material
 
 `ParseKey` accepts:
 
-| Input | Interpreted as |
-| --- | --- |
-| `hex:…` | A hex-encoded 32-byte key |
-| `base64:…` | A base64-encoded 32-byte key |
+| Input         | Interpreted as                                   |
+| ------------- | ------------------------------------------------ |
+| `hex:…`       | A hex-encoded 32-byte key                        |
+| `base64:…`    | A base64-encoded 32-byte key                     |
 | anything else | A passphrase, turned into a key with HKDF-SHA256 |
 
 Requiring a prefix means a passphrase that happens to look like hex is never mistaken for a raw key.
@@ -55,11 +56,14 @@ key, err = crypto.LoadKeyFile("/data/.key")
 
 ## Rotating keys
 
-Pass the old keys after the primary key. Decryption tries the primary key first, then each old
-key in order:
+Put the old keys in `Keys.Previous`. Decryption tries `Primary` first, then each old key in
+order:
 
 ```go
-enc, err := crypto.New(newKey, oldKey1, oldKey2)
+enc, err := crypto.New(crypto.Keys{
+	Primary:  newKey,
+	Previous: [][]byte{oldKey1, oldKey2},
+})
 
 plain, err := enc.Decrypt(storedValue) // works for values written with any of the keys
 fresh, err := enc.Encrypt(plain)       // always written with newKey
@@ -71,12 +75,25 @@ fresh, err := enc.Encrypt(plain)       // always written with newKey
 doesn't yet pass an `*Encryptor` around. Prefer constructing one with `New` and passing it
 explicitly.
 
+`InitEncryption` takes a `Config` by value and panics on bad key material:
+
+```go
+crypto.InitEncryption(crypto.Config{
+	EncryptionKey: os.Getenv("ENCRYPTION_KEY"),
+	Environment:   os.Getenv("ENVIRONMENT"),
+})
+```
+
+- An empty `EncryptionKey` panics when `Environment` is `"production"` and `AgentMode` is false.
+  Otherwise it falls back to a fixed development key.
+- Until `InitEncryption` runs, `Default`, `Encrypt`, and `Decrypt` return an `*InvalidKeyError`.
+
 ## Errors
 
-| Type | Meaning |
-| --- | --- |
-| `*InvalidKeyError` | The key material is malformed or the wrong size |
-| `*CiphertextError` | The ciphertext is structurally invalid |
-| `*DecodeError` | The ciphertext is not valid base64 |
-| `*DecryptError` | Authentication failed: wrong key or tampered data |
-| `*RandomError` | The system's random source failed |
+| Type               | Meaning                                           |
+| ------------------ | ------------------------------------------------- |
+| `*InvalidKeyError` | The key material is malformed or the wrong size   |
+| `*CiphertextError` | The ciphertext is structurally invalid            |
+| `*DecodeError`     | The ciphertext is not valid base64                |
+| `*DecryptError`    | Authentication failed: wrong key or tampered data |
+| `*RandomError`     | The system's random source failed                 |

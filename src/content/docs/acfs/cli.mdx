@@ -13,14 +13,14 @@ acfs list|walk|stat|read|write|mkdir|remove|apply|version
 
 ## Output format
 
-| Command | Output |
-| --- | --- |
-| `list` | One JSON `ListResponse` with `entries` |
-| `stat` | One JSON `StatResponse` with `entry` |
-| `walk` | NDJSON `WalkRecord` lines, always ending with an `end` record. Supports depth and entry limits |
-| `read` | A 16-byte `ARCW` protocol-v2 header followed by the raw file content |
-| `apply` | One JSON `ApplyResponse` with the number of changes applied |
-| `version` | One JSON `VersionResponse` including the supported `protocol` |
+| Command   | Output                                                                                         |
+| --------- | ---------------------------------------------------------------------------------------------- |
+| `list`    | One JSON `ListResponse` with `entries`                                                         |
+| `stat`    | One JSON `StatResponse` with `entry`                                                           |
+| `walk`    | NDJSON `WalkRecord` lines, always ending with an `end` record. Supports depth and entry limits |
+| `read`    | A 16-byte `ARCW` protocol-v2 header followed by the raw file content                           |
+| `apply`   | One JSON `ApplyResponse` with the number of changes applied                                    |
+| `version` | One JSON `VersionResponse` including the supported `protocol`                                  |
 
 Every response includes a `version` field matching `types.ProtocolVersion` (currently `2`).
 
@@ -30,7 +30,13 @@ On failure, the command writes exactly one JSON `ErrorResponse` line to **stderr
 else:
 
 ```json
-{"code":"outside_root","message":"path escapes workspace root","operation":"stat","path":"/../etc","version":2}
+{
+  "code": "outside_root",
+  "message": "path escapes workspace root",
+  "operation": "stat",
+  "path": "/../etc",
+  "version": 2
+}
 ```
 
 `code` is a stable `types.ErrorCode`:

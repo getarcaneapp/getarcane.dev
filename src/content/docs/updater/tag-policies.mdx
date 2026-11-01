@@ -8,12 +8,12 @@ By default the updater keeps a container's configured tag and only follows that 
 
 ## Strategies
 
-| Strategy | Behavior |
-| --- | --- |
-| *(omitted)* | Follow the digest, unless a constraint or tag pattern is set |
-| `digest` | Always follow the current tag's digest |
-| `tag` | Select a newer tag. Requires a valid tag policy |
-| `auto` | Select a newer tag for stable, complete semantic versions such as `3.1.2` or `v3.1.2`. Moving tags (`latest`), partial versions (`3`, `3.1`), and ambiguous prerelease or variant tags fall back to digest checks |
+| Strategy    | Behavior                                                                                                                                                                                                          |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| _(omitted)_ | Follow the digest, unless a constraint or tag pattern is set                                                                                                                                                      |
+| `digest`    | Always follow the current tag's digest                                                                                                                                                                            |
+| `tag`       | Select a newer tag. Requires a valid tag policy                                                                                                                                                                   |
+| `auto`      | Select a newer tag for stable, complete semantic versions such as `3.1.2` or `v3.1.2`. Moving tags (`latest`), partial versions (`3`, `3.1`), and ambiguous prerelease or variant tags fall back to digest checks |
 
 A constraint or tag pattern without a strategy behaves like `auto`.
 
@@ -25,7 +25,7 @@ services:
     image: example/app:3.1.2-alpine
     labels:
       com.getarcaneapp.arcane.updater.strategy: tag
-      com.getarcaneapp.arcane.updater.constraint: '3.x'
+      com.getarcaneapp.arcane.updater.constraint: "3.x"
       com.getarcaneapp.arcane.updater.tag-pattern: '(?P<version>\d+\.\d+\.\d+)-alpine'
 ```
 
@@ -89,6 +89,8 @@ The selection logic is also available on its own in `updater/pkg/utils/tagpolicy
 - `ApplyPending` rechecks references, eligibility, and constraints before pulling. It pulls each
   distinct target once, and keeps records after a failure. It updates running containers only. Use
   `UpdateContainer` to update a stopped container.
+- Container-scoped and tag records are pulled and recreated one dependency unit at a time. A record
+  is cleared only after every container it targets succeeded.
 
 For **Compose tag changes**, implement `types.ProjectImageUpdater` on your `ProjectUpdater`:
 
@@ -108,3 +110,15 @@ The default `RegistryTagLister` uses Docker configuration credentials and handle
 requesting 1000 tags per page. The caller's deadline applies to the whole listing; without one, it
 falls back to 120 seconds. A partial listing is never treated as "up to date". Replace
 `Config.RegistryTagLister` to supply your own credentials or registry client.
+
+To list tags yourself, call `registry.FetchTags` with a `registry.Request`. A nil `Credential` is
+anonymous, and a nil `HTTPClient` uses `http.DefaultTransport`:
+
+```go
+import "go.getarcane.app/updater/registry"
+
+tags, err := registry.FetchTags(ctx, registry.Request{
+	Host:       "docker.io",
+	Repository: "library/nginx",
+})
+```

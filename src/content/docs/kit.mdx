@@ -3,7 +3,7 @@ title: kit
 description: Shared Go helpers used across the go.getarcane.app modules.
 ---
 
-import ModuleInfo from '../../components/ModuleInfo.astro';
+import ModuleInfo from "../../components/ModuleInfo.astro";
 
 `kit` is the root module of the repository. It holds helpers that more than one nested module
 depends on: string and path utilities, Unicode normalization, registry host canonicalization, and
@@ -13,17 +13,17 @@ more. Nested modules import `kit`. `kit` never imports them.
 
 ## Packages
 
-| Package | Purpose |
-| --- | --- |
-| [`kit/pkg`](#kitpkg) | General-purpose generics, string, path, and hashing helpers |
+| Package                                  | Purpose                                                               |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| [`kit/pkg`](#kitpkg)                     | General-purpose generics, string, path, and hashing helpers           |
 | [`kit/normalization`](#kitnormalization) | Opt-in Unicode NFC and whitespace normalization driven by struct tags |
-| [`kit/pkg/capture`](#kitpkgcapture) | Bounded, concurrency-safe output buffer |
-| [`kit/pkg/fs`](#kitpkgfs) | Logical workspace path conversion for `os.Root` |
-| [`kit/pkg/git`](#kitpkggit) | Git repository URL detection and normalization |
-| [`kit/pkg/mapping`](#kitpkgmapping) | Deep copies between structurally similar types |
-| [`kit/pkg/registry`](#kitpkgregistry) | Container registry host canonicalization |
-| [`kit/pkg/signals`](#kitpkgsignals) | Graceful-shutdown contexts |
-| [`kit/pkg/utils`](#kitpkgutils) | Helpers for string slices with blank entries |
+| [`kit/pkg/capture`](#kitpkgcapture)      | Bounded, concurrency-safe output buffer                               |
+| [`kit/pkg/fs`](#kitpkgfs)                | Logical workspace path conversion for `os.Root`                       |
+| [`kit/pkg/git`](#kitpkggit)              | Git repository URL detection and normalization                        |
+| [`kit/pkg/mapping`](#kitpkgmapping)      | Deep copies between structurally similar types                        |
+| [`kit/pkg/registry`](#kitpkgregistry)    | Container registry host canonicalization                              |
+| [`kit/pkg/signals`](#kitpkgsignals)      | Graceful-shutdown contexts                                            |
+| [`kit/pkg/utils`](#kitpkgutils)          | Helpers for string slices with blank entries                          |
 
 ## kit/pkg
 
@@ -43,35 +43,36 @@ tags := kit.Unique([]string{"a", "b", "a"}) // [a b]
 count := kit.As[int](raw["count"], 0)     // type-asserted with a fallback
 ```
 
-| Function | Description |
-| --- | --- |
-| `As[T](value, fallback)` | Returns `value` as `T`, or `fallback` if it is nil or holds a different type |
-| `AsStringMap(value)` | Converts any map with string or interface keys to `map[string]any` |
-| `Collect[T](value, mapper)` | Maps a slice, an array, or a single value through `mapper` |
-| `FromPtr[T](ptr)` | Dereferences `ptr`, returning the zero value when it is nil |
-| `ParseOrDefault[T](value, def, parse)` | Parses `value`, falling back to `def` when it is empty or invalid |
-| `Ternary[T](cond, a, b)` | Inline conditional |
-| `Unique(items)` | Distinct items in first-seen order |
+| Function                               | Description                                                                  |
+| -------------------------------------- | ---------------------------------------------------------------------------- |
+| `As[T](value, fallback)`               | Returns `value` as `T`, or `fallback` if it is nil or holds a different type |
+| `AsStringMap(value)`                   | Converts any map with string or interface keys to `map[string]any`           |
+| `Collect[T](value, mapper)`            | Maps a slice, an array, or a single value through `mapper`                   |
+| `FromPtr[T](ptr)`                      | Dereferences `ptr`, returning the zero value when it is nil                  |
+| `ParseOrDefault[T](value, def, parse)` | Parses `value`, falling back to `def` when it is empty or invalid            |
+| `Ternary[T](cond, a, b)`               | Inline conditional                                                           |
+| `Unique(items)`                        | Distinct items in first-seen order                                           |
 
 ### Strings and parsing
 
-| Function | Description |
-| --- | --- |
-| `ParseBool(value)` | Accepts `true/1/yes/on` and `false/0/no/off`, and reports whether the value was recognized |
-| `Capitalize`, `SnakeCase` | Case helpers |
-| `EnsurePrefix`, `TrimQuotes`, `TrimNonEmpty`, `ToString` | Trimming and conversion |
-| `RandomString(n)` | `n` URL-safe characters from `crypto/rand` |
-| `SHA256Hex(s)` | Hex SHA-256 of a `string` or `[]byte` |
+| Function                                                 | Description                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `ParseBool(value)`                                       | Accepts `true/1/yes/on` and `false/0/no/off`, and reports whether the value was recognized |
+| `Capitalize`, `SnakeCase`                                | Case helpers                                                                               |
+| `EnsurePrefix`, `TrimQuotes`, `TrimNonEmpty`, `ToString` | Trimming and conversion                                                                    |
+| `RandomString(n)`                                        | `n` URL-safe characters from `crypto/rand`                                                 |
+| `SHA256Hex(s)`                                           | Hex SHA-256 of a `string` or `[]byte`                                                      |
+| `GetImageMimeType(ext)`                                  | MIME type for an image extension such as `png` or `svg` (no dot), or `""` when unknown     |
 
 ### Paths
 
-| Function | Description |
-| --- | --- |
-| `NormalizeRelativePath(input)` | Cleans a slash-delimited path so it can never begin with `/` or escape the root |
-| `SanitizeBrowsePath(input)` | Cleans a file-browser path to an absolute form and rejects traversal above the root |
-| `ValidateFileName(name)` | Validates a single path segment |
-| `FilePathMatches(rel, root)` | Reports whether `rel` is `root` or lies beneath it |
-| `SQLitePathFromDSN(dsn)` | Extracts the file path from a SQLite `file:` DSN |
+| Function                       | Description                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| `NormalizeRelativePath(input)` | Cleans a slash-delimited path so it can never begin with `/` or escape the root     |
+| `SanitizeBrowsePath(input)`    | Cleans a file-browser path to an absolute form and rejects traversal above the root |
+| `ValidateFileName(name)`       | Validates a single path segment                                                     |
+| `FilePathMatches(rel, root)`   | Reports whether `rel` is `root` or lies beneath it                                  |
+| `SQLitePathFromDSN(dsn)`       | Extracts the file path from a SQLite `file:` DSN                                    |
 
 ### Networking, sorting, and hashing
 
@@ -87,10 +88,10 @@ count := kit.As[int](raw["count"], 0)     // type-asserted with a fallback
 Normalizes struct fields in place based on their tags: trims surrounding Unicode whitespace,
 applies NFC, and checks length constraints. Untagged fields are left alone.
 
-| Tag | Effect |
-| --- | --- |
-| `trim:"true"` | Trims surrounding Unicode whitespace |
-| `unorm:"nfc"` | Applies Unicode NFC normalization |
+| Tag                               | Effect                                    |
+| --------------------------------- | ----------------------------------------- |
+| `trim:"true"`                     | Trims surrounding Unicode whitespace      |
+| `unorm:"nfc"`                     | Applies Unicode NFC normalization         |
 | `minLength:"n"` / `maxLength:"n"` | Length checks applied after normalization |
 
 ```go
@@ -111,8 +112,19 @@ body, err = normalization.NormalizeJSON(body, reflect.TypeFor[CreateProjectReque
 ```
 
 `HasRules(typ)` validates a type's tags and reports whether it has any. Compiled metadata is
-cached and safe for concurrent use. `Text(value, trim, nfc)` normalizes a single string. Don't use
-any of these on secrets.
+cached and safe for concurrent use.
+
+`Text` normalizes a single string. `TextOptions` picks the steps. Trimming runs first, then NFC.
+The zero value returns the input unchanged.
+
+```go
+name = normalization.Text(name, normalization.TextOptions{
+	Trim: true,
+	NFC:  true,
+})
+```
+
+Don't use any of these on secrets.
 
 ## kit/pkg/capture
 
@@ -132,7 +144,7 @@ record.Truncated = logs.Truncated()
 
 ## kit/pkg/fs
 
-Converts between the absolute *logical* paths shown to users (`/config/app.yaml`) and the relative
+Converts between the absolute _logical_ paths shown to users (`/config/app.yaml`) and the relative
 paths `os.Root` accepts (`config/app.yaml`).
 
 - `NormalizeLogicalPath(path)` validates a logical path and returns its relative form. Malformed
@@ -159,6 +171,7 @@ import "go.getarcane.app/kit/pkg/mapping"
 
 dto, err := mapping.MapOne[models.Network, api.Network](network)
 dtos, err := mapping.MapSlice[models.Network, api.Network](networks)
+err = mapping.MapStruct(network, &dto) // copy into an existing value
 ```
 
 ## kit/pkg/registry
@@ -179,9 +192,11 @@ registry.LookupKeys("docker.io")                  // every Docker Hub alias to p
 import "go.getarcane.app/kit/pkg/signals"
 
 ctx := signals.SignalContext(context.Background())
-// ctx is canceled on the first interrupt. A second interrupt, or a missed
-// graceful-shutdown deadline, forces the process to exit.
+// ctx is canceled on the first SIGINT or SIGTERM. A second signal, or a missed
+// 30-second graceful-shutdown deadline, forces the process to exit.
 ```
+
+Call `SignalContext` once per process. A second call panics.
 
 ## kit/pkg/utils
 

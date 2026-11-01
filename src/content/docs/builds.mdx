@@ -3,7 +3,7 @@ title: builds
 description: BuildKit image builds through the local Docker daemon or Depot.
 ---
 
-import ModuleInfo from '../../components/ModuleInfo.astro';
+import ModuleInfo from "../../components/ModuleInfo.astro";
 
 `builds` is an image build engine. It runs BuildKit builds either on the local Docker daemon
 or on [Depot](https://depot.dev), streams the same output the Docker CLI would print, and can load
@@ -21,27 +21,35 @@ import (
 	"go.getarcane.app/builds/types"
 )
 
-svc := api.NewService(api.Config{
-	SettingsProvider:     settings,     // BuildSettings()
+svc, err := api.NewService(api.Config{
+	SettingsProvider:     settings,      // BuildSettings()
 	DockerClientProvider: dockerClients, // GetClient(ctx)
 	RegistryAuthProvider: registries,    // GetAllRegistryAuthConfigs(ctx)
 	Logger:               slog.Default(),
 })
+if err != nil {
+	return err
+}
 ```
 
-| Interface | Method | Purpose |
-| --- | --- | --- |
-| `types.SettingsProvider` | `BuildSettings() BuildSettings` | Default provider, Depot credentials, and timeout |
-| `types.DockerClientProvider` | `GetClient(ctx) (*client.Client, error)` | Docker client for local builds and loads |
-| `types.RegistryAuthProvider` | `GetAllRegistryAuthConfigs(ctx)` | Registry credentials for pulls and pushes |
+`NewService` checks the required providers once, when you create the service.
+`SettingsProvider` and `DockerClientProvider` are required. A missing one returns
+`*types.BuildSettingsProviderUnavailableError` or `*types.BuildDockerServiceUnavailableError`.
+`RegistryAuthProvider` and `Logger` are optional. `Logger` defaults to `slog.Default()`.
+
+| Interface                    | Method                                   | Purpose                                          |
+| ---------------------------- | ---------------------------------------- | ------------------------------------------------ |
+| `types.SettingsProvider`     | `BuildSettings() BuildSettings`          | Default provider, Depot credentials, and timeout |
+| `types.DockerClientProvider` | `GetClient(ctx) (*client.Client, error)` | Docker client for local builds and loads         |
+| `types.RegistryAuthProvider` | `GetAllRegistryAuthConfigs(ctx)`         | Registry credentials for pulls and pushes        |
 
 `BuildSettings` fields:
 
-| Field | Description |
-| --- | --- |
-| `BuildProvider` | `local` (the default) or `depot` |
-| `BuildTimeoutSecs` | Timeout for the whole build. Zero means 30 minutes |
-| `DepotProjectID`, `DepotToken` | Required for the `depot` provider |
+| Field                          | Description                                        |
+| ------------------------------ | -------------------------------------------------- |
+| `BuildProvider`                | `local` (the default) or `depot`                   |
+| `BuildTimeoutSecs`             | Timeout for the whole build. Zero means 30 minutes |
+| `DepotProjectID`, `DepotToken` | Required for the `depot` provider                  |
 
 ## Build an image
 
@@ -60,7 +68,9 @@ fmt.Println(result.Provider, result.Digest)
 ```
 
 The progress writer receives the plain text the Docker CLI prints, including BuildKit progress
-and push/load output. Writes to it are serialized, so any `io.Writer` is safe to pass.
+and push/load output. Writes to it are serialized, so any `io.Writer` is safe to pass. A nil writer
+discards the output. If rendering a Docker build stream to the writer fails, `BuildImage` returns
+that error too. The last argument is a service name. It is currently unused, so pass `""`.
 
 ### Defaults and rules
 
@@ -68,26 +78,29 @@ and push/load output. Writes to it are serialized, so any `io.Writer` is safe to
   **push**.
 - `Tags` is required when pushing or loading. Tags are trimmed and de-duplicated.
 - `Dockerfile` and `DockerfileInline` are mutually exclusive.
-- `Provider` on the request overrides the default from settings.
+- `Provider` on the request overrides the default from settings. An unknown provider name returns
+  an error.
+- `ContextDir` is required and must exist.
 
 ### Provider limitations
 
-| Provider | Rejects |
-| --- | --- |
-| `local` | `cacheTo`, `entitlements`, `privileged`, and more than one platform |
-| `depot` | `network`, `isolation`, `shmSize`, `ulimits`, `extraHosts`, and builds that don't push |
+| Provider | Rejects                                                                                |
+| -------- | -------------------------------------------------------------------------------------- |
+| `local`  | `cacheTo`, `entitlements`, `privileged`, and more than one platform                    |
+| `depot`  | `network`, `isolation`, `shmSize`, `ulimits`, `extraHosts`, and builds that don't push |
 
 ## Errors
 
 Validation failures use concrete error types, so you can match them with `errors.As`. Examples
 include `*types.BuildTagsRequiredError`, `*types.DepotBuildPushRequiredError`,
-`*types.DockerfileAndInlineMutuallyExclusiveError`, and `*types.BuildProviderUnavailableError`.
+`*types.DockerfileAndInlineMutuallyExclusiveError`, and `*types.BuildContextDirRequiredError`.
+Options a provider doesn't support are reported together in one plain error.
 Exporter failures (`BuildKitImageExporterError`, `BuildKitDockerExporterError`) wrap the
 underlying cause.
 
 ## Helper packages
 
-| Package | Contents |
-| --- | --- |
-| `builds/pkg/docker` | `ClientOpts` and `SessionDialer` for connecting a BuildKit client through the Docker API. Also `RenderJSONMessageStream` |
+| Package                    | Contents                                                                                                                          |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `builds/pkg/docker`        | `ClientOpts` and `SessionDialer` for connecting a BuildKit client through the Docker API. Also `RenderJSONMessageStream`          |
 | `builds/pkg/contextsource` | Parses Git build context strings in the form `repo#ref:subdir`. Rejects a subdirectory that is absolute or escapes the repository |

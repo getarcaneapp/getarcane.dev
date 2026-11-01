@@ -3,7 +3,7 @@ title: streams
 description: JSON-lines fan-in, event buses, log broadcasting, and container stats history.
 ---
 
-import ModuleInfo from '../../components/ModuleInfo.astro';
+import ModuleInfo from "../../components/ModuleInfo.astro";
 
 `streams` provides building blocks for live views: aggregating many producers into
 one JSON-lines response, sharing poll loops between subscribers, fanning out Docker events, and
@@ -13,12 +13,12 @@ keeping recent logs and stats in memory.
 
 ## Packages
 
-| Package | Purpose |
-| --- | --- |
-| [`streams/agg`](#streamsagg) | JSON-lines fan-in, shared poll loops, per-environment pollers |
-| [`streams/bus`](#streamsbus) | Typed in-process pub/sub for Docker events |
-| [`streams/logs`](#streamslogs) | `slog` capture into a ring buffer with live subscribers |
-| [`streams/stats`](#streamsstats) | Compact per-container CPU and memory history |
+| Package                          | Purpose                                                       |
+| -------------------------------- | ------------------------------------------------------------- |
+| [`streams/agg`](#streamsagg)     | JSON-lines fan-in, shared poll loops, per-environment pollers |
+| [`streams/bus`](#streamsbus)     | Typed in-process pub/sub for Docker events                    |
+| [`streams/logs`](#streamslogs)   | `slog` capture into a ring buffer with live subscribers       |
+| [`streams/stats`](#streamsstats) | Compact per-container CPU and memory history                  |
 
 ## streams/agg
 
@@ -52,18 +52,19 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-`agg.Send` gives up when `ctx` is done, so a producer can never block forever. An invalid
-configuration returns `*agg.InvalidConfigError`.
+`agg.Send` gives up when `ctx` is done, so a producer can never block forever. `Writer` and `Flush`
+are required, `Buffer` must not be negative, and `HeartbeatInterval` must be positive when
+`MakeHeartbeat` is set. An invalid configuration returns `*agg.InvalidConfigError`.
 
 ### Hub: share poll loops
 
 A `Hub` makes sure only one poll loop runs for each key, however many clients subscribe.
 The first subscriber starts the runner, and it stops when the last one leaves. Each subscriber gets
 events through a latest-wins mailbox, so a slow client skips to the newest state and never stalls
-the others.
+the others. The zero `Hub` is ready to use.
 
 ```go
-hub := agg.NewHub[Snapshot]()
+var hub agg.Hub[Snapshot]
 
 hub.Subscribe(ctx, envID,
 	func(ctx context.Context, publish func(Snapshot)) {
@@ -86,26 +87,45 @@ hub.Subscribe(ctx, envID,
 Because delivery is latest-wins, hub events must be **states** (snapshots, errors), not deltas.
 :::
 
+`Subscribe` blocks until `ctx` is done or `deliver` returns `false`. The runner's context is tied to
+the runner, not to any one subscriber. A subscriber that joins late gets the most recent event
+straight away.
+
 ### Reconcilers
 
-- `ReconcilePollersByKey` keeps one poller goroutine for each listed item, restarting it when the
-  item's version changes.
-- `ReconcileEnvironmentPollers` is a version of the above for a `RemoteEnvironmentLister`.
+`ReconcilePollersByKey` keeps one poller goroutine for each listed item until `ctx` is canceled.
+It re-checks the list every `Interval` (default one minute). It restarts a poller when the item's
+`Version` changes, and stops it when the item leaves the list.
+
+```go
+go agg.ReconcilePollersByKey(ctx, agg.PollerConfig[Environment]{
+	List:    listRemoteEnvironments,
+	Key:     func(env Environment) string { return env.ID },
+	Version: func(env Environment) string { return env.URL },
+	Run:     pollEnvironment, // func(ctx context.Context, env Environment)
+	Label:   "environments",
+})
+```
+
+Items with an empty key are skipped. A nil `Version` never restarts a poller.
 
 ## streams/bus
 
 `DockerEventBus` fans out Docker daemon events by type. Delivery never blocks. A message that
-doesn't fit in a subscriber's buffer is dropped and reported to an optional callback.
+doesn't fit in a subscriber's buffer is dropped and reported to the optional `Config.OnDrop`
+callback. Both `bus.Config{}` and `bus.SubscribeOptions{}` are valid zero values.
 
 ```go
 import "go.getarcane.app/streams/bus"
 
-b := bus.NewDockerEventBus(bus.WithDroppedEventCallback(func(m events.Message) {
-	slog.Warn("dropped docker event", "type", m.Type, "action", m.Action)
-}))
+b := bus.NewDockerEventBus(bus.Config{
+	OnDrop: func(m events.Message) {
+		slog.Warn("dropped docker event", "type", m.Type, "action", m.Action)
+	},
+})
 defer b.Close()
 
-containers, unsubscribe := b.Subscribe(events.ContainerEventType, bus.WithSubscriberBuffer(64))
+containers, unsubscribe := b.Subscribe(events.ContainerEventType, bus.SubscribeOptions{Buffer: new(64)})
 defer unsubscribe()
 
 go func() {
@@ -115,6 +135,9 @@ go func() {
 }()
 ```
 
+`SubscribeOptions.Buffer` is a pointer so that `new(0)` can request an unbuffered channel. Nil or a
+negative value uses the default buffer of 16.
+
 ## streams/logs
 
 Captures `slog` records into a ring buffer and sends new entries to live subscribers. This is
@@ -123,13 +146,16 @@ useful for showing an application's own logs in its UI.
 ```go
 import "go.getarcane.app/streams/logs"
 
-broadcaster := logs.New(1000)
+broadcaster := logs.New(logs.Config{Capacity: 1000})
 slog.SetDefault(slog.New(logs.NewSlogHandler(slog.NewJSONHandler(os.Stderr, nil), broadcaster)))
 
 recent := broadcaster.Recent()        // oldest first
 live, unsubscribe := broadcaster.Subscribe()
 defer unsubscribe()
 ```
+
+`Capacity` defaults to 1000 entries. `SubscriberBuffer` defaults to 256; set it to `new(0)` for
+unbuffered subscriber channels. The zero `logs.Config{}` uses both defaults.
 
 ## streams/stats
 
@@ -139,14 +165,18 @@ memory in tenths of a percent, plus memory bytes.
 ```go
 import "go.getarcane.app/streams/stats"
 
-store := stats.NewStore(
-	stats.WithCapacity(60),              // samples per container (default 30)
-	stats.WithTTL(10*time.Minute),       // evict inactive containers
-	stats.WithPruneInterval(time.Minute),
-)
+store := stats.NewStore(stats.StoreConfig{
+	Capacity:      60,               // samples per container (default 30)
+	TTL:           10 * time.Minute, // evict inactive containers (default 10 minutes)
+	PruneInterval: time.Minute,      // minimum time between prune passes (default 1 minute)
+})
 
 sample := stats.BuildSample(resp) // from a Docker StatsResponse
-history := store.Record(containerID, sample, true, time.Now())
+history := store.Record(stats.RecordRequest{
+	ContainerID:    containerID,
+	Sample:         sample,
+	IncludeHistory: true, // return the history after appending
+})
 
 payload := stats.StatsStreamPayload{
 	StatsResponse:        resp,
@@ -157,3 +187,7 @@ payload := stats.StatsStreamPayload{
 
 `BuildSample` computes CPU as `cpuDelta / systemDelta` without the Docker CLI's online-CPU
 multiplier, so values stay on a 0–100 scale.
+
+Zero or negative `StoreConfig` fields use the defaults, and the zero `Store` is also usable. A zero
+`RecordRequest.RecordedAt` means now. `History` reads a container's samples without recording one,
+`Remove` drops a container's history, and `Prune` evicts expired histories on demand.

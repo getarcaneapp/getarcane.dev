@@ -1,0 +1,170 @@
+---
+title: tripwire
+description: Recursive directory watching with debounced, deduplicated change batches.
+---
+
+import ModuleInfo from "../../components/ModuleInfo.astro";
+
+`tripwire` watches a directory tree and tells you what changed, in batches. It subscribes to every
+directory under a root, attaches new directories as they appear, and collects changes until the
+tree goes quiet. Then it delivers them in a single call.
+
+<ModuleInfo path="tripwire" />
+
+:::note
+`tripwire` is served from `kit.getarcane.app`, not `go.getarcane.app`. Use the import path shown
+above.
+:::
+
+## Quick start
+
+```go
+import "kit.getarcane.app/tripwire"
+
+w, err := tripwire.New(projectsDir, tripwire.Config[string]{
+	Key: func(e tripwire.Event) (string, bool) {
+		base := filepath.Base(e.Path)
+		return e.Logical, base == "compose.yaml" || base == "docker-compose.yml"
+	},
+	OnBatch: func(ctx context.Context, b tripwire.Batch[string]) {
+		if b.Resync {
+			syncAll(ctx)
+			return
+		}
+		syncPaths(ctx, b.Keys)
+	},
+	Debounce: 500 * time.Millisecond,
+})
+if err != nil {
+	return err
+}
+if err := w.Start(ctx); err != nil {
+	return err
+}
+defer w.Stop()
+```
+
+`New` only checks the config. `Start` subscribes to the tree, and when it returns `nil` every
+existing directory within the depth limit is already watched. `Stop` shuts the watcher down and
+waits for a running `OnBatch` call to return.
+
+## Keys and batches
+
+A watcher is generic over its key type `K`. `Config.Key` maps each event to a key, or returns
+`false` to drop it. Keys collect in a set, so each one appears once per batch.
+
+The key type sets how changes are grouped:
+
+| Watcher              | Key                                | You get                            |
+| -------------------- | ---------------------------------- | ---------------------------------- |
+| `Watcher[string]`    | `tripwire.PathOf` or your own func | The distinct paths that changed    |
+| `Watcher[struct{}]`  | `tripwire.Signal`                  | One call per burst, with no detail |
+| `Watcher[ProjectID]` | Your own func                      | The distinct projects that changed |
+
+`Signal` is generic, and Go infers its type argument from the field, so no `[struct{}]` is needed:
+
+```go
+w, err := tripwire.New(templatesDir, tripwire.Config[struct{}]{
+	Key:      tripwire.Signal,
+	OnBatch:  func(ctx context.Context, _ tripwire.Batch[struct{}]) { reloadTemplates(ctx) },
+	MaxDepth: 1,
+})
+```
+
+`Key` runs on the watcher goroutine for every event, so keep it cheap.
+
+### Event fields
+
+| Field     | Meaning                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------- |
+| `Path`    | Real path reported by the OS. Inside a followed symlink, this is under the link target.   |
+| `Logical` | `Path` as seen from the root, with followed symlinks mapped back to where the link lives. |
+| `Rel`     | `Logical` relative to the root. `"."` for the root itself.                                |
+| `Op`      | `tripwire.Create`, `Write`, `Remove`, `Rename`, `Chmod`, or a combination.                |
+
+Use `Logical` or `Rel` when the key has to match paths from your own directory scan. Use `Path`
+when you need to open the file.
+
+### Resync batches
+
+`Batch.Resync` is `true` when changes may have been lost:
+
+- the kernel's event queue overflowed (inotify `IN_Q_OVERFLOW`)
+- the subscription was lost and had to be rebuilt
+- the root was removed or renamed, then came back
+
+When `Resync` is set, reconcile everything instead of trusting `Keys` alone.
+
+## Configuration
+
+Only `Key` is required.
+
+| Field            | Default                  | Meaning                                                                               |
+| ---------------- | ------------------------ | ------------------------------------------------------------------------------------- |
+| `Key`            | (required)               | Maps an event to a key. `false` drops it.                                             |
+| `OnBatch`        | discard                  | Receives batches. Calls are serial. A panic is logged and delivery continues.         |
+| `SkipDir`        | watch all                | Returns `true` for directory base names that should not be watched or descended into. |
+| `Debounce`       | `2s`                     | How long the tree must be quiet before a batch is delivered.                          |
+| `MaxDelay`       | `10 × Debounce`          | Upper limit on how long constant changes can hold a batch back.                       |
+| `MaxDepth`       | `0` (unlimited)          | Directory levels watched below the root. Direct children are depth 1.                 |
+| `FollowSymlinks` | `false`                  | Watch symlinked directories and their targets.                                        |
+| `Backoff`        | `{Initial: 5s, Max: 5m}` | Retry delays while rebuilding a lost subscription.                                    |
+| `Logger`         | `slog.Default()`         | Receives warnings about unwatchable directories and lost subscriptions.               |
+
+### Debounce and MaxDelay
+
+Each change restarts the `Debounce` timer, so a burst of writes becomes one batch. Under constant
+churn the timer would never fire, so `MaxDelay` forces a delivery once the oldest pending change
+is that old.
+
+While `OnBatch` runs, new changes keep collecting and are merged into the next batch. A slow
+callback delays batches but never loses keys.
+
+### Depth limits
+
+With `MaxDepth: 1`, the root and its direct children are watched, so `root/app/compose.yaml` is
+seen and `root/app/nested/compose.yaml` is not. New directories are attached only if they fall
+inside the limit.
+
+### Skipping directories
+
+`SkipDir` gets a directory's base name. Skipped directories are not watched or walked, which keeps
+build-artifact trees such as `node_modules` or `.esphome` from using up inotify watches:
+
+```go
+SkipDir: func(name string) bool {
+	return name == "node_modules" || strings.HasPrefix(name, ".arcane-trash-")
+},
+```
+
+### Symlinks
+
+With `FollowSymlinks: true`, a symlinked directory is watched through its target, and events inside
+it are reported with a `Logical` path under the link. Symlink cycles are detected by device and
+inode, so a link that points back at an ancestor is walked only once.
+
+`tripwire` uses `os.*` rather than [`acfs`](/acfs/) on purpose: it watches user-configured paths and
+may follow links whose targets live outside any confinement root.
+
+## Lifecycle
+
+- `Start` on a running watcher is a no-op.
+- A watcher runs once. `Start` after `Stop` returns `tripwire.ErrStopped`.
+- If `Start` fails (for example, the root doesn't exist), the watcher is spent and releases its
+  resources. Calling `Stop` afterwards is safe but not required.
+- `Stop` is idempotent, safe to call from several goroutines, and safe to call before `Start`.
+- Changes not yet delivered when `Stop` is called are dropped.
+- Canceling the context passed to `Start` also stops the watcher.
+
+`New` returns `tripwire.ErrNoRoot` for an empty root and `tripwire.ErrNoKey` when `Key` is nil.
+
+## Linux watch limits
+
+On Linux each watched directory uses one inotify watch. Very large trees can reach
+`fs.inotify.max_user_watches`. When that happens, `tripwire` logs a warning for each directory it
+couldn't watch and keeps watching the rest. Raise the limit or use `MaxDepth` and `SkipDir` to
+watch less:
+
+```sh
+sysctl fs.inotify.max_user_watches=524288
+```
