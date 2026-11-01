@@ -12,12 +12,12 @@ reclaimed.
 Every probe degrades gracefully. On non-Linux hosts the cgroup and procfs files simply fail to
 open, and the functions report "not in a cgroup" or zero values.
 
-<ModuleInfo path="sys/cgroup" />
+<ModuleInfo path="kit.getarcane.app/sys/cgroup" />
 
 ## Resource limits
 
 ```go
-import "go.getarcane.app/sys/cgroup"
+import "kit.getarcane.app/sys/cgroup"
 
 limits, err := cgroup.DetectLimits()
 if err != nil {

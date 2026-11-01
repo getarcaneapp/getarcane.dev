@@ -9,7 +9,7 @@ import ModuleInfo from "../../components/ModuleInfo.astro";
 or on [Depot](https://depot.dev), streams the same output the Docker CLI would print, and can load
 or push the result.
 
-<ModuleInfo path="builds" />
+<ModuleInfo path="kit.getarcane.app/builds" />
 
 ## Create a service
 
@@ -17,8 +17,8 @@ The host application supplies three small providers:
 
 ```go
 import (
-	"go.getarcane.app/builds/api"
-	"go.getarcane.app/builds/types"
+	"kit.getarcane.app/builds/api"
+	"kit.getarcane.app/builds/types"
 )
 
 svc, err := api.NewService(api.Config{

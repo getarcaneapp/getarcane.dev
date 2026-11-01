@@ -5,7 +5,6 @@ import worker from "./vanity.ts";
 const TEST_DOMAIN = "go.carr.sh";
 const ARCANE_REPO_URL = "https://github.com/getarcaneapp/arcane";
 const KIT_REPO_URL = "https://github.com/getarcaneapp/kit";
-const SYS_REPO_URL = "https://github.com/getarcaneapp/sys";
 
 interface TestModule {
   repoUrl: string;
@@ -18,14 +17,12 @@ const MODULES: Record<string, TestModule> = {
   builds: { repoUrl: KIT_REPO_URL, subdir: "builds" },
   updater: { repoUrl: KIT_REPO_URL, subdir: "updater" },
   streams: { repoUrl: KIT_REPO_URL, subdir: "streams" },
-  tripwire: { repoUrl: KIT_REPO_URL, subdir: "tripwire" },
   "sys/bytes": { repoUrl: KIT_REPO_URL, subdir: "sys/bytes" },
   "sys/cgroup": { repoUrl: KIT_REPO_URL, subdir: "sys/cgroup" },
   "sys/crypto": { repoUrl: KIT_REPO_URL, subdir: "sys/crypto" },
   docker: { repoUrl: KIT_REPO_URL, subdir: "docker" },
   "docker/convert": { repoUrl: KIT_REPO_URL, subdir: "docker/convert" },
   "docker/compat": { repoUrl: KIT_REPO_URL, subdir: "docker/compat" },
-  "sys/atomic": { repoUrl: SYS_REPO_URL, subdir: "atomic" },
   arcane: { repoUrl: ARCANE_REPO_URL, subdir: "backend" },
   cli: { repoUrl: ARCANE_REPO_URL, subdir: "cli" },
   types: { repoUrl: ARCANE_REPO_URL, subdir: "types" },
@@ -151,35 +148,68 @@ describe("domain from request URL", () => {
 });
 
 // ---------------------------------------------------------------------------
-// kit.getarcane.app serves only kit repo modules
+// kit.getarcane.app has its own module table, rooted at the kit/ directory
 // ---------------------------------------------------------------------------
 describe("kit host", () => {
   const KIT_HOST = "kit.getarcane.app";
-  const kitModuleNames = Object.keys(MODULES).filter(
-    (name) => name !== "kit" && MODULES[name].repoUrl === KIT_REPO_URL,
-  );
+  const root = `${KIT_HOST} git ${KIT_REPO_URL} kit`;
+  const cases: [path: string, meta: string, location: string][] = [
+    ["/", root, `${KIT_REPO_URL}/tree/main/kit`],
+    ["/fs", root, `${KIT_REPO_URL}/tree/main/kit/fs`],
+    ["/sys/bytes", root, `${KIT_REPO_URL}/tree/main/kit/sys/bytes`],
+    ["/sys/crypto", root, `${KIT_REPO_URL}/tree/main/kit/sys/crypto`],
+    ["/acfs", `${KIT_HOST}/acfs git ${KIT_REPO_URL} acfs`, `${KIT_REPO_URL}/tree/main/acfs`],
+    [
+      "/builds",
+      `${KIT_HOST}/builds git ${KIT_REPO_URL} builds`,
+      `${KIT_REPO_URL}/tree/main/builds`,
+    ],
+    [
+      "/docker/compat",
+      `${KIT_HOST}/docker git ${KIT_REPO_URL} docker`,
+      `${KIT_REPO_URL}/tree/main/docker/compat`,
+    ],
+    [
+      "/docker/streams/logs",
+      `${KIT_HOST}/docker git ${KIT_REPO_URL} docker`,
+      `${KIT_REPO_URL}/tree/main/docker/streams/logs`,
+    ],
+    [
+      "/docker/convert",
+      `${KIT_HOST}/docker/convert git ${KIT_REPO_URL} docker/convert`,
+      `${KIT_REPO_URL}/tree/main/docker/convert`,
+    ],
+    [
+      "/sys/cgroup",
+      `${KIT_HOST}/sys/cgroup git ${KIT_REPO_URL} sys/cgroup`,
+      `${KIT_REPO_URL}/tree/main/sys/cgroup`,
+    ],
+    [
+      "/tripwire",
+      `${KIT_HOST}/tripwire git ${KIT_REPO_URL} tripwire`,
+      `${KIT_REPO_URL}/tree/main/tripwire`,
+    ],
+    [
+      "/updater",
+      `${KIT_HOST}/updater git ${KIT_REPO_URL} updater`,
+      `${KIT_REPO_URL}/tree/main/updater`,
+    ],
+  ];
 
   function kitRequest(path: string): Promise<Response> {
     return worker.fetch(new Request(`https://${KIT_HOST}${path}`));
   }
 
-  for (const moduleName of kitModuleNames) {
-    test(`serves go-import for ${KIT_HOST}/${moduleName}`, async () => {
-      const res = await kitRequest(`/${moduleName}?go-get=1`);
+  for (const [path, meta, location] of cases) {
+    test(`serves go-import for ${KIT_HOST}${path}`, async () => {
+      const res = await kitRequest(`${path}?go-get=1`);
       assert.equal(res.status, 200);
-      assert.ok((await res.text()).includes(expectedGoImport(KIT_HOST, moduleName)));
+      assert.ok((await res.text()).includes(`<meta name="go-import" content="${meta}">`));
     });
 
-    test(`redirects ${KIT_HOST}/${moduleName} to GitHub`, async () => {
-      const res = await kitRequest(`/${moduleName}`);
-      assert.equal(res.headers.get("Location"), expectedRedirect(moduleName));
-    });
-  }
-
-  for (const moduleName of ["kit", "sys/atomic", "arcane", "cli", "types"]) {
-    test(`returns 404 for non-kit module ${moduleName}`, async () => {
-      const res = await kitRequest(`/${moduleName}?go-get=1`);
-      assert.equal(res.status, 404);
+    test(`redirects ${KIT_HOST}${path} to GitHub`, async () => {
+      const res = await kitRequest(path);
+      assert.equal(res.headers.get("Location"), location);
     });
   }
 });

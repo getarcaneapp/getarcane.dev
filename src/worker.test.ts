@@ -30,9 +30,25 @@ describe("go.getarcane.app", () => {
     );
   });
 
+  test("still serves frozen modules", async () => {
+    for (const [path, meta] of [
+      ["/kit/pkg", "go.getarcane.app/kit git https://github.com/getarcaneapp/kit"],
+      ["/streams/logs", "go.getarcane.app/streams git https://github.com/getarcaneapp/kit streams"],
+      [
+        "/sys/crypto",
+        "go.getarcane.app/sys/crypto git https://github.com/getarcaneapp/kit sys/crypto",
+      ],
+    ]) {
+      const res = await request(`https://go.getarcane.app${path}?go-get=1`);
+      assert.ok((await res.text()).includes(`content="${meta}"`), path);
+    }
+  });
+
   test("returns 404 for unknown paths, never docs", async () => {
-    const res = await request("https://go.getarcane.app/guides/introduction/");
-    assert.equal(res.status, 404);
+    for (const path of ["/", "/tripwire", "/guides/introduction/"]) {
+      const res = await request(`https://go.getarcane.app${path}`);
+      assert.equal(res.status, 404, path);
+    }
   });
 });
 
@@ -46,6 +62,15 @@ describe("kit.getarcane.app", () => {
     );
   });
 
+  test("serves the root kit module from the kit directory", async () => {
+    const res = await request("https://kit.getarcane.app/fs?go-get=1");
+    assert.ok(
+      (await res.text()).includes(
+        '<meta name="go-import" content="kit.getarcane.app git https://github.com/getarcaneapp/kit kit">',
+      ),
+    );
+  });
+
   test("redirects browsers to GitHub", async () => {
     const res = await request("https://kit.getarcane.app/tripwire");
     assert.equal(res.status, 302);
@@ -53,13 +78,6 @@ describe("kit.getarcane.app", () => {
       res.headers.get("Location"),
       "https://github.com/getarcaneapp/kit/tree/main/tripwire",
     );
-  });
-
-  test("returns 404 for non-kit modules and docs paths", async () => {
-    for (const path of ["/arcane?go-get=1", "/guides/introduction/"]) {
-      const res = await request(`https://kit.getarcane.app${path}`);
-      assert.equal(res.status, 404, path);
-    }
   });
 });
 

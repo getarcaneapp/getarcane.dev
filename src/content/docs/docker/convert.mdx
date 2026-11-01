@@ -9,14 +9,14 @@ import ModuleInfo from "../../../components/ModuleInfo.astro";
 Commands are parsed as text and never executed, so
 shell substitutions such as `$(...)` are copied through literally.
 
-<ModuleInfo path="docker/convert" />
+<ModuleInfo path="kit.getarcane.app/docker/convert" />
 
 ## Convert in one call
 
 ```go
 import (
-	"go.getarcane.app/docker/convert"
-	converttypes "go.getarcane.app/docker/convert/types"
+	"kit.getarcane.app/docker/convert"
+	converttypes "kit.getarcane.app/docker/convert/types"
 )
 
 result, err := convert.Convert(

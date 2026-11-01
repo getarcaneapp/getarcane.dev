@@ -8,12 +8,12 @@ import ModuleInfo from "../../../components/ModuleInfo.astro";
 `sys/bytes` has one central type, `Capacity`: a `uint64` byte count that prints itself the way
 `df -h` does (`10.4G`) and parses that format back. It depends only on the standard library.
 
-<ModuleInfo path="sys/bytes" />
+<ModuleInfo path="kit.getarcane.app/sys/bytes" />
 
 ## Parsing and printing
 
 ```go
-import "go.getarcane.app/sys/bytes"
+import "kit.getarcane.app/sys/bytes"
 
 c, err := bytes.ParseCapacity("512Mi")
 if err != nil {

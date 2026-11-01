@@ -10,12 +10,12 @@ Compose labels, mount translation, network selection, exec, log streaming, progr
 cached volume usage. It works with the
 [`github.com/moby/moby/client`](https://pkg.go.dev/github.com/moby/moby/client) SDK.
 
-<ModuleInfo path="docker" />
+<ModuleInfo path="kit.getarcane.app/docker" />
 
 ## Containers and Compose labels
 
 ```go
-import "go.getarcane.app/docker"
+import "kit.getarcane.app/docker"
 
 name := docker.ContainerNameFromNames(summary.Names) // "/web" -> "web"
 project := docker.ComposeProjectLabel(summary.Labels)

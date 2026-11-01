@@ -1,42 +1,39 @@
 ---
-import { Aside, Code } from '@astrojs/starlight/components';
-import { getModule, importPath, pkgGoDevUrl, sourceUrl } from '../data/modules';
+import { Code } from '@astrojs/starlight/components';
+import { getPackage } from '../data/modules';
 
 interface Props {
-	/** Module path below its vanity host, e.g. "docker/compat". */
+	/** Full import path, e.g. "kit.getarcane.app/docker/compat". */
 	path: string;
 }
 
-const mod = getModule(Astro.props.path);
-const path = importPath(mod);
-const source = sourceUrl(mod);
+const pkg = getPackage(Astro.props.path);
 ---
 
-{
-	mod.deprecated && (
-		<Aside type="caution" title="Deprecated">
-			This module is kept only for existing importers. New code should use{' '}
-			<code>{mod.deprecated}</code>.
-		</Aside>
-	)
-}
-
 <dl class="module-info not-content">
+	{
+		pkg.path !== pkg.module && (
+			<div>
+				<dt>Package</dt>
+				<dd><code>{pkg.path}</code></dd>
+			</div>
+		)
+	}
 	<div>
 		<dt>Module</dt>
-		<dd><code>{path}</code></dd>
+		<dd><code>{pkg.module}</code></dd>
 	</div>
 	<div>
 		<dt>Source</dt>
-		<dd><a href={source}>{source.replace('https://', '')}</a></dd>
+		<dd><a href={pkg.source}>{pkg.source.replace('https://', '')}</a></dd>
 	</div>
 	<div>
 		<dt>Reference</dt>
-		<dd><a href={pkgGoDevUrl(mod)}>pkg.go.dev</a></dd>
+		<dd><a href={`https://pkg.go.dev/${pkg.path}`}>pkg.go.dev</a></dd>
 	</div>
 </dl>
 
-<Code code={`go get ${path}@latest`} lang="sh" />
+<Code code={`go get ${pkg.module}@latest`} lang="sh" />
 
 <style>
 	.module-info {

@@ -1,15 +1,15 @@
 ---
-title: streams
+title: docker/streams
 description: JSON-lines fan-in, event buses, log broadcasting, and container stats history.
 ---
 
-import ModuleInfo from "../../components/ModuleInfo.astro";
+import ModuleInfo from "../../../components/ModuleInfo.astro";
 
-`streams` provides building blocks for live views: aggregating many producers into
+`docker/streams` provides building blocks for live views: aggregating many producers into
 one JSON-lines response, sharing poll loops between subscribers, fanning out Docker events, and
 keeping recent logs and stats in memory.
 
-<ModuleInfo path="streams" />
+<ModuleInfo path="kit.getarcane.app/docker/streams" />
 
 ## Packages
 
@@ -28,7 +28,7 @@ keeping recent logs and stats in memory.
 each write. It returns when `ctx` is canceled or encoding fails.
 
 ```go
-import "go.getarcane.app/streams/agg"
+import "kit.getarcane.app/docker/streams/agg"
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -116,7 +116,7 @@ doesn't fit in a subscriber's buffer is dropped and reported to the optional `Co
 callback. Both `bus.Config{}` and `bus.SubscribeOptions{}` are valid zero values.
 
 ```go
-import "go.getarcane.app/streams/bus"
+import "kit.getarcane.app/docker/streams/bus"
 
 b := bus.NewDockerEventBus(bus.Config{
 	OnDrop: func(m events.Message) {
@@ -144,7 +144,7 @@ Captures `slog` records into a ring buffer and sends new entries to live subscri
 useful for showing an application's own logs in its UI.
 
 ```go
-import "go.getarcane.app/streams/logs"
+import "kit.getarcane.app/docker/streams/logs"
 
 broadcaster := logs.New(logs.Config{Capacity: 1000})
 slog.SetDefault(slog.New(logs.NewSlogHandler(slog.NewJSONHandler(os.Stderr, nil), broadcaster)))
@@ -163,7 +163,7 @@ unbuffered subscriber channels. The zero `logs.Config{}` uses both defaults.
 memory in tenths of a percent, plus memory bytes.
 
 ```go
-import "go.getarcane.app/streams/stats"
+import "kit.getarcane.app/docker/streams/stats"
 
 store := stats.NewStore(stats.StoreConfig{
 	Capacity:      60,               // samples per container (default 30)

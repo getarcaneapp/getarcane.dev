@@ -11,7 +11,7 @@ streaming reads and writes that **can never escape a root directory**. Logical p
 with `os.Root`, `..` components are collapsed, and a symlink whose target escapes the root reports
 `ErrOutsideRoot` instead of being followed.
 
-<ModuleInfo path="acfs" />
+<ModuleInfo path="kit.getarcane.app/acfs" />
 
 <div class="page-tabs">
 <Tabs>
@@ -34,8 +34,8 @@ does not touch the filesystem. A host path outside `root.Path` returns `ErrOutsi
 
 ```go
 import (
-	"go.getarcane.app/acfs"
-	"go.getarcane.app/acfs/types"
+	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/acfs/types"
 )
 
 root := acfs.Root{Path: "/var/lib/docker/volumes/example/_data"}
@@ -162,19 +162,6 @@ ACFS sentinels classify policy failures:
 Errors from the operating system are wrapped, not translated, so the standard predicates keep
 working: `errors.Is(err, fs.ErrNotExist)`, `errors.Is(err, fs.ErrExist)`, and
 `errors.Is(err, os.ErrPermission)`.
-
-## acfs/atomic
-
-For the few destinations with no natural root, such as a user-chosen output file, use
-`acfs/atomic`. It is a crash-safe, drop-in replacement for `os.WriteFile`: it writes to a temporary
-file, fsyncs, chmods, and renames. Unlike `Root.Write`, it **refuses** a symlinked destination
-instead of replacing it.
-
-```go
-import "go.getarcane.app/acfs/atomic"
-
-err := atomic.WriteFile("/etc/myapp/key", key, 0o600)
-```
 
 ## acfs/types
 

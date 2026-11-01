@@ -1,6 +1,6 @@
 ---
 title: kit
-description: Shared Go helpers used across the go.getarcane.app modules.
+description: Shared Go helpers used across the kit.getarcane.app modules.
 ---
 
 import ModuleInfo from "../../components/ModuleInfo.astro";
@@ -9,28 +9,31 @@ import ModuleInfo from "../../components/ModuleInfo.astro";
 depends on: string and path utilities, Unicode normalization, registry host canonicalization, and
 more. Nested modules import `kit`. `kit` never imports them.
 
-<ModuleInfo path="kit" />
+<ModuleInfo path="kit.getarcane.app" />
 
 ## Packages
 
 | Package                                  | Purpose                                                               |
 | ---------------------------------------- | --------------------------------------------------------------------- |
-| [`kit/pkg`](#kitpkg)                     | General-purpose generics, string, path, and hashing helpers           |
+| [`kit`](#kit)                            | General-purpose generics, string, path, and hashing helpers           |
 | [`kit/normalization`](#kitnormalization) | Opt-in Unicode NFC and whitespace normalization driven by struct tags |
-| [`kit/pkg/capture`](#kitpkgcapture)      | Bounded, concurrency-safe output buffer                               |
-| [`kit/pkg/fs`](#kitpkgfs)                | Logical workspace path conversion for `os.Root`                       |
-| [`kit/pkg/git`](#kitpkggit)              | Git repository URL detection and normalization                        |
-| [`kit/pkg/mapping`](#kitpkgmapping)      | Deep copies between structurally similar types                        |
-| [`kit/pkg/registry`](#kitpkgregistry)    | Container registry host canonicalization                              |
-| [`kit/pkg/signals`](#kitpkgsignals)      | Graceful-shutdown contexts                                            |
-| [`kit/pkg/utils`](#kitpkgutils)          | Helpers for string slices with blank entries                          |
+| [`kit/capture`](#kitcapture)             | Bounded, concurrency-safe output buffer                               |
+| [`kit/fs`](#kitfs)                       | Logical workspace path conversion for `os.Root`                       |
+| [`kit/fs/atomic`](#kitfsatomic)          | Crash-safe `os.WriteFile` replacement                                 |
+| [`kit/git`](#kitgit)                     | Git repository URL detection and normalization                        |
+| [`kit/mapping`](#kitmapping)             | Deep copies between structurally similar types                        |
+| [`kit/registry`](#kitregistry)           | Container registry host canonicalization                              |
+| [`kit/signals`](#kitsignals)             | Graceful-shutdown contexts                                            |
+| [`kit/utils`](#kitutils)                 | Helpers for string slices with blank entries                          |
+| [`kit/sys/bytes`](/sys/bytes/)           | Parsing and printing byte sizes                                       |
+| [`kit/sys/crypto`](/sys/crypto/)         | Encrypting stored secrets                                             |
 
-## kit/pkg
+## kit
 
 The package is named `kit`, so it is usually imported as:
 
 ```go
-import kit "go.getarcane.app/kit/pkg"
+import kit "kit.getarcane.app"
 ```
 
 ### Generics
@@ -95,7 +98,7 @@ applies NFC, and checks length constraints. Untagged fields are left alone.
 | `minLength:"n"` / `maxLength:"n"` | Length checks applied after normalization |
 
 ```go
-import "go.getarcane.app/kit/normalization"
+import "kit.getarcane.app/normalization"
 
 type CreateProjectRequest struct {
 	Name     string  `json:"name" trim:"true" unorm:"nfc" minLength:"1" maxLength:"64"`
@@ -126,13 +129,13 @@ name = normalization.Text(name, normalization.TextOptions{
 
 Don't use any of these on secrets.
 
-## kit/pkg/capture
+## kit/capture
 
 A bounded `io.Writer` for build or process logs. Writes never fail. Once the limit is reached the
 rest is dropped and the capture is marked truncated.
 
 ```go
-import "go.getarcane.app/kit/pkg/capture"
+import "kit.getarcane.app/capture"
 
 logs := capture.New(1 << 20) // keep at most 1 MiB
 cmd.Stdout = io.MultiWriter(os.Stdout, logs)
@@ -142,7 +145,7 @@ record.Output = logs.String()
 record.Truncated = logs.Truncated()
 ```
 
-## kit/pkg/fs
+## kit/fs
 
 Converts between the absolute _logical_ paths shown to users (`/config/app.yaml`) and the relative
 paths `os.Root` accepts (`config/app.yaml`).
@@ -152,7 +155,20 @@ paths `os.Root` accepts (`config/app.yaml`).
 - `LogicalPath(rel)` goes the other way.
 - `FormatMode(mode)` renders a file mode the way POSIX `stat` does.
 
-## kit/pkg/git
+## kit/fs/atomic
+
+For the few destinations with no natural root, such as a user-chosen output file, use
+`fs/atomic`. It is a crash-safe, drop-in replacement for `os.WriteFile`: it writes to a temporary
+file, fsyncs, chmods, and renames. Unlike `Root.Write`, it **refuses** a symlinked destination
+instead of replacing it.
+
+```go
+import "kit.getarcane.app/fs/atomic"
+
+err := atomic.WriteFile("/etc/myapp/key", key, 0o600)
+```
+
+## kit/git
 
 - `IsSupportedRepositoryURL(raw)` recognizes scp-style `git@`, `git://`, `ssh://`, `http://`, and
   `https://` repository URLs.
@@ -161,35 +177,35 @@ paths `os.Root` accepts (`config/app.yaml`).
 - `RequiresRemoteProbe(raw)` reports whether only asking the remote can tell if an HTTP(S) URL
   points at a Git repository.
 
-## kit/pkg/mapping
+## kit/mapping
 
 Deep-copies between structurally similar types, converting `netip` values to and from strings
 along the way. It is useful for moving between API DTOs and internal models.
 
 ```go
-import "go.getarcane.app/kit/pkg/mapping"
+import "kit.getarcane.app/mapping"
 
 dto, err := mapping.MapOne[models.Network, api.Network](network)
 dtos, err := mapping.MapSlice[models.Network, api.Network](networks)
 err = mapping.MapStruct(network, &dto) // copy into an existing value
 ```
 
-## kit/pkg/registry
+## kit/registry
 
 Canonicalizes registry hosts so that image references and credential lookups agree on what counts
 as the same registry.
 
 ```go
-import "go.getarcane.app/kit/pkg/registry"
+import "kit.getarcane.app/registry"
 
 registry.Normalize("https://index.docker.io/v1/") // "docker.io"
 registry.LookupKeys("docker.io")                  // every Docker Hub alias to probe in a credential store
 ```
 
-## kit/pkg/signals
+## kit/signals
 
 ```go
-import "go.getarcane.app/kit/pkg/signals"
+import "kit.getarcane.app/signals"
 
 ctx := signals.SignalContext(context.Background())
 // ctx is canceled on the first SIGINT or SIGTERM. A second signal, or a missed
@@ -198,7 +214,7 @@ ctx := signals.SignalContext(context.Background())
 
 Call `SignalContext` once per process. A second call panics.
 
-## kit/pkg/utils
+## kit/utils
 
 `CountNonEmpty`, `HasNonEmpty`, and `NormalizeSet` work on string slices whose entries may be
 blank. `NormalizeSet` trims each entry, drops blanks and duplicates, and returns a sorted copy.

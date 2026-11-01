@@ -29,7 +29,7 @@ export default defineConfig({
           navLinks: [
             { label: "Guides", link: "/guides/introduction/" },
             { label: "Modules", link: "/kit/" },
-            { label: "pkg.go.dev", link: "https://pkg.go.dev/go.getarcane.app/kit" },
+            { label: "pkg.go.dev", link: "https://pkg.go.dev/kit.getarcane.app" },
           ],
           footerText:
             "These modules are released under the [BSD 3-Clause License](https://github.com/getarcaneapp/kit/blob/main/LICENSE). Built with [Starlight](https://starlight.astro.build) and [Lucode](https://lucas-labs.github.io/lucode-starlight-theme/).",
@@ -54,22 +54,14 @@ export default defineConfig({
             { slug: "docker" },
             { slug: "docker/compat" },
             { slug: "docker/convert" },
+            { slug: "docker/streams" },
             { slug: "builds" },
             { slug: "updater" },
           ],
         },
         {
-          label: "Streaming",
-          items: [{ slug: "streams" }],
-        },
-        {
           label: "System",
-          items: [
-            { slug: "sys/bytes" },
-            { slug: "sys/cgroup" },
-            { slug: "sys/crypto" },
-            { slug: "sys/atomic", badge: { text: "Deprecated", variant: "caution" } },
-          ],
+          items: [{ slug: "sys/bytes" }, { slug: "sys/cgroup" }, { slug: "sys/crypto" }],
         },
       ],
     }),

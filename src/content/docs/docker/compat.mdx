@@ -9,12 +9,12 @@ import ModuleInfo from "../../../components/ModuleInfo.astro";
 so in-process API callers work against older engines and Podman. The Docker CLI applies these
 workarounds for you. Code that calls the API directly has to apply them itself.
 
-<ModuleInfo path="docker/compat" />
+<ModuleInfo path="kit.getarcane.app/docker/compat" />
 
 ## The easy way: wrap the client
 
 ```go
-import "go.getarcane.app/docker/compat"
+import "kit.getarcane.app/docker/compat"
 
 api := compat.WrapDockerAPIClientForInspectCompatibility(cli)
 // api.ContainerCreate, ContainerInspect, NetworkInspect, and NetworkList now

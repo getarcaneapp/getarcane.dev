@@ -9,12 +9,12 @@ import ModuleInfo from "../../../components/ModuleInfo.astro";
 stored credentials. It supports key rotation: older keys can
 still decrypt while new data is encrypted with the primary key.
 
-<ModuleInfo path="sys/crypto" />
+<ModuleInfo path="kit.getarcane.app/sys/crypto" />
 
 ## Encrypting
 
 ```go
-import "go.getarcane.app/sys/crypto"
+import "kit.getarcane.app/sys/crypto"
 
 key, err := crypto.ParseKey(os.Getenv("ENCRYPTION_KEY"))
 if err != nil {

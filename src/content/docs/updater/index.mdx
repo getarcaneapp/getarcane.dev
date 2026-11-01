@@ -13,7 +13,7 @@ handles Compose projects, registry digest checks, and containers that must updat
 It works against the local Docker environment out of the box. Persistence, notifications, and
 self-upgrade behavior are adapters, so a host application provides only the parts it owns.
 
-<ModuleInfo path="updater" />
+<ModuleInfo path="kit.getarcane.app/updater" />
 
 <div class="page-tabs">
 <Tabs>
@@ -24,7 +24,7 @@ self-upgrade behavior are adapters, so a host application provides only the part
 Everything runs through a `Service`. The zero `Config` is valid:
 
 ```go
-import "go.getarcane.app/updater"
+import "kit.getarcane.app/updater"
 
 service, err := updater.New(updater.Config{})
 if err != nil {
@@ -288,7 +288,7 @@ services:
 Tag policies come from the `LabelPolicy.TagPolicyFunc`. To use your own source:
 
 ```go
-import updatertypes "go.getarcane.app/updater/types"
+import updatertypes "kit.getarcane.app/updater/types"
 
 service, err := updater.New(updater.Config{
 	LabelPolicy: updater.LabelPolicy{
@@ -346,7 +346,7 @@ To list tags yourself, call `registry.FetchTags` with a `registry.Request`. A ni
 anonymous, and a nil `HTTPClient` uses `http.DefaultTransport`:
 
 ```go
-import "go.getarcane.app/updater/registry"
+import "kit.getarcane.app/updater/registry"
 
 tags, err := registry.FetchTags(ctx, registry.Request{
 	Host:       "docker.io",
