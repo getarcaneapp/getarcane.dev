@@ -5,12 +5,16 @@ import lucode from "lucode-starlight";
 
 export default defineConfig({
   site: "https://getarcane.dev",
+  redirects: {
+    "/acfs/cli": "/acfs/",
+    "/updater/tag-policies": "/updater/",
+  },
   integrations: [
     starlight({
       title: "getarcane.dev",
       description: "Documentation for the Go modules published under go.getarcane.app.",
       logo: {
-        src: "./src/assets/logo-full-animated.svg",
+        src: "./src/assets/logo-full.svg",
         alt: "Arcane",
         replacesTitle: true,
       },
@@ -42,11 +46,7 @@ export default defineConfig({
         },
         {
           label: "Filesystem",
-          items: [
-            { slug: "acfs" },
-            { slug: "acfs/cli" },
-            { slug: "tripwire", badge: { text: "New", variant: "tip" } },
-          ],
+          items: [{ slug: "acfs" }, { slug: "tripwire", badge: { text: "New", variant: "tip" } }],
         },
         {
           label: "Docker",
@@ -56,7 +56,6 @@ export default defineConfig({
             { slug: "docker/convert" },
             { slug: "builds" },
             { slug: "updater" },
-            { slug: "updater/tag-policies" },
           ],
         },
         {

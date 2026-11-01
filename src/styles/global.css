@@ -29,3 +29,37 @@
   max-width: none;
   max-height: none;
 }
+
+/*
+ * Lucode styles Starlight Tabs as a code-block container: the panel shares the
+ * code background and pulls code blocks to its edges with negative margins.
+ * Page-level tabs (wrapped in `.page-tabs`) hold prose, so render the panel as
+ * normal page content and keep code blocks as their own framed boxes.
+ */
+.page-tabs starlight-tabs .tablist-wrapper {
+  border-radius: calc(var(--radius) + 0.25rem);
+  box-shadow: none;
+}
+
+.page-tabs starlight-tabs .tablist-wrapper ~ [role="tabpanel"] {
+  padding: 1.5rem 0 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.page-tabs starlight-tabs .tablist-wrapper ~ [role="tabpanel"] p {
+  color: inherit;
+}
+
+.page-tabs starlight-tabs .tablist-wrapper ~ [role="tabpanel"] > .expressive-code {
+  margin: 1rem 0 0;
+}
+
+.page-tabs starlight-tabs .tablist-wrapper ~ [role="tabpanel"] > .expressive-code .frame,
+.page-tabs starlight-tabs .tablist-wrapper ~ [role="tabpanel"] > .expressive-code pre {
+  border-radius: var(--radius);
+}
+
+.page-tabs starlight-tabs .tablist-wrapper ~ [role="tabpanel"] > .expressive-code .header {
+  display: flex;
+}
