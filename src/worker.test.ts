@@ -89,11 +89,11 @@ describe("getarcane.dev", () => {
     }
   });
 
-  test("answers go-get requests like the vanity host", async () => {
-    const res = await request("https://getarcane.dev/updater?go-get=1");
+  test("answers go-get requests for arcane modules", async () => {
+    const res = await request("https://getarcane.dev/arcane?go-get=1");
     assert.ok(
       (await res.text()).includes(
-        'content="getarcane.dev/updater git https://github.com/getarcaneapp/kit updater"',
+        'content="getarcane.dev/arcane git https://github.com/getarcaneapp/arcane backend"',
       ),
     );
   });

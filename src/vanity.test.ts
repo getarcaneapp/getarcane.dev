@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import worker from "./vanity.ts";
 
-const TEST_DOMAIN = "go.carr.sh";
+const TEST_DOMAIN = "go.getarcane.app";
 const ARCANE_REPO_URL = "https://github.com/getarcaneapp/arcane";
 const KIT_REPO_URL = "https://github.com/getarcaneapp/kit";
 
@@ -141,9 +141,9 @@ describe("browser redirect", () => {
 // ---------------------------------------------------------------------------
 describe("domain from request URL", () => {
   test("uses the request hostname in go-import meta tag", async () => {
-    const res = await worker.fetch(new Request("https://custom.example.com/cli?go-get=1"));
+    const res = await worker.fetch(new Request("https://getarcane.dev/cli?go-get=1"));
     const html = await res.text();
-    assert.ok(html.includes(expectedGoImport("custom.example.com", "cli")));
+    assert.ok(html.includes(expectedGoImport("getarcane.dev", "cli")));
   });
 });
 

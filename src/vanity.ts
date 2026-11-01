@@ -45,12 +45,22 @@ const MODULES: Record<string, VanityModule> = {
   types: { repoUrl: REPO_URL, subdir: "types" },
 };
 
+// getarcane.dev also serves the docs site: never add docs pages under /arcane, /cli, or /types.
+const DOCS_HOST_MODULES: Record<string, VanityModule> = {
+  arcane: { repoUrl: REPO_URL, subdir: "backend" },
+  cli: { repoUrl: REPO_URL, subdir: "cli" },
+  types: { repoUrl: REPO_URL, subdir: "types" },
+};
+
+const DOCS_HOST = "getarcane.dev";
 const KIT_HOST = "kit.getarcane.app";
 const VANITY_HOST = "go.getarcane.app";
 
-// Hosts with their own module table. Any other host uses MODULES.
+// Module table per host. Unknown hosts serve nothing.
 const HOST_MODULES: Record<string, Record<string, VanityModule>> = {
+  [DOCS_HOST]: DOCS_HOST_MODULES,
   [KIT_HOST]: KIT_MODULES,
+  [VANITY_HOST]: MODULES,
 };
 
 const GO_GET_RESPONSE_HEADERS = {
@@ -59,7 +69,11 @@ const GO_GET_RESPONSE_HEADERS = {
 } satisfies HeadersInit;
 
 function getModuleRequest(hostname: string, pathname: string): ModuleRequest | null {
-  const modules = Object.hasOwn(HOST_MODULES, hostname) ? HOST_MODULES[hostname] : MODULES;
+  if (!Object.hasOwn(HOST_MODULES, hostname)) {
+    return null;
+  }
+
+  const modules = HOST_MODULES[hostname];
   const pathSegments = pathname.split("/").filter(Boolean);
 
   for (let segmentCount = pathSegments.length; segmentCount >= 0; segmentCount--) {
@@ -119,4 +133,4 @@ export default {
 };
 
 // Shared with the docs (src/data/modules.ts) so the module list lives in one place.
-export { buildRedirectUrl, getModuleRequest, KIT_HOST, VANITY_HOST };
+export { buildRedirectUrl, DOCS_HOST, getModuleRequest, KIT_HOST, VANITY_HOST };
