@@ -2,7 +2,7 @@
 //
 // - go.getarcane.app, kit.getarcane.app, and any `?go-get=1` request, is handled
 //   by the vanity Worker (src/vanity.ts).
-// - getarcane.dev/arcane, /cli, and /types redirect browsers to GitHub.
+// - getarcane.dev/arcane, /cli, /types, and /copacetic redirect browsers to GitHub.
 // - Everything else is served from the static docs build.
 
 import vanity, { DOCS_HOST, getModuleRequest, KIT_HOST, VANITY_HOST } from "./vanity.ts";

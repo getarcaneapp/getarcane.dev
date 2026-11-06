@@ -139,6 +139,32 @@ describe("browser redirect", () => {
 // ---------------------------------------------------------------------------
 // Domain derived from request URL
 // ---------------------------------------------------------------------------
+describe("copacetic fork", () => {
+  const COPACETIC_REPO_URL = "https://github.com/getarcaneapp/copacetic";
+
+  test("serves the module root without a subdirectory", async () => {
+    const res = await worker.fetch(
+      new Request("https://getarcane.dev/copacetic/pkg/patch?go-get=1"),
+    );
+    assert.equal(res.status, 200);
+    assert.ok(
+      (await res.text()).includes(
+        `<meta name="go-import" content="getarcane.dev/copacetic git ${COPACETIC_REPO_URL}">`,
+      ),
+    );
+  });
+
+  test("redirects browsers to the fork on GitHub", async () => {
+    const res = await worker.fetch(new Request("https://getarcane.dev/copacetic/pkg/patch"));
+    assert.equal(res.headers.get("Location"), `${COPACETIC_REPO_URL}/tree/main/pkg/patch`);
+  });
+
+  test("is not served from go.getarcane.app", async () => {
+    const res = await worker.fetch(new Request("https://go.getarcane.app/copacetic?go-get=1"));
+    assert.equal(res.status, 404);
+  });
+});
+
 describe("domain from request URL", () => {
   test("uses the request hostname in go-import meta tag", async () => {
     const res = await worker.fetch(new Request("https://getarcane.dev/cli?go-get=1"));

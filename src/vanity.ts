@@ -3,6 +3,8 @@ const DEFAULT_BRANCH = "main";
 
 const KIT_REPO_URL = "https://github.com/getarcaneapp/kit";
 
+const COPACETIC_REPO_URL = "https://github.com/getarcaneapp/copacetic";
+
 interface VanityModule {
   repoUrl: string;
   subdir?: string;
@@ -45,11 +47,12 @@ const MODULES: Record<string, VanityModule> = {
   types: { repoUrl: REPO_URL, subdir: "types" },
 };
 
-// getarcane.dev also serves the docs site: never add docs pages under /arcane, /cli, or /types.
+// getarcane.dev also serves the docs site: never add docs pages under /arcane, /cli, /types, or /copacetic.
 const DOCS_HOST_MODULES: Record<string, VanityModule> = {
   arcane: { repoUrl: REPO_URL, subdir: "backend" },
   cli: { repoUrl: REPO_URL, subdir: "cli" },
   types: { repoUrl: REPO_URL, subdir: "types" },
+  copacetic: { repoUrl: COPACETIC_REPO_URL },
 };
 
 const DOCS_HOST = "getarcane.dev";
